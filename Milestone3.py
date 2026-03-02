@@ -1,6 +1,6 @@
 """
  Advanced Analytics & Visualization Module
-----------------------------------------------------------
+Only Milestone 3 code
 Adds interactive charts, category breakdowns, and AI-based forecasting.
 """
 
@@ -528,4 +528,5 @@ def forecasting_page():
             display['yhat'] = display['yhat'].apply(lambda x: f"₹{x:,.2f}")
             display['yhat_lower'] = display['yhat_lower'].apply(lambda x: f"₹{x:,.2f}")
             display['yhat_upper'] = display['yhat_upper'].apply(lambda x: f"₹{x:,.2f}")
+
             st.dataframe(display, use_container_width=True)
