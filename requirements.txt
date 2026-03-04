@@ -6,3 +6,4 @@ pyjwt
 scikit-learn
 prophet
 numpy
+openpyxl
