@@ -23,6 +23,75 @@ import os
 import plotly.express as px
 import plotly.graph_objects as go
 
+# -----------------------------------------------------------------------------
+# FIX 1: Use absolute paths for database files
+#        This ensures the files are found on Streamlit Cloud.
+# -----------------------------------------------------------------------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+USER_DB = os.path.join(BASE_DIR, 'USER.db')
+BUSINESS_DB = os.path.join(BASE_DIR, 'BUSINESS.db')
+SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'your-secret-key-change-in-production')
+JWT_ALGORITHM = 'HS256'
+
+# -----------------------------------------------------------------------------
+# Custom CSS for a modern, clean look (no emojis, just style)
+# -----------------------------------------------------------------------------
+def apply_custom_css():
+    st.markdown("""
+        <style>
+        /* Main container */
+        .main {
+            padding: 0rem 1rem;
+        }
+        /* Headers */
+        h1, h2, h3 {
+            color: #1E3A5F;
+            font-weight: 500;
+            border-bottom: 2px solid #f0f2f6;
+            padding-bottom: 0.3rem;
+        }
+        /* Buttons */
+        .stButton > button {
+            border-radius: 8px;
+            border: none;
+            background: linear-gradient(135deg, #1E3A5F 0%, #2B4C7C 100%);
+            color: white;
+            padding: 0.5rem 1rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        .stButton > button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        /* Metrics */
+        [data-testid="stMetricValue"] {
+            font-size: 2rem;
+            color: #1E3A5F;
+        }
+        /* Sidebar */
+        .css-1d391kg {
+            background-color: #f8fafc;
+        }
+        /* DataFrames */
+        .stDataFrame {
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+        }
+        /* Expanders */
+        .streamlit-expanderHeader {
+            background-color: #f8fafc;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }
+        /* Success/Info/Warning boxes */
+        .stAlert {
+            border-radius: 8px;
+            border-left: 4px solid;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
 # Optional Prophet import
 try:
     from prophet import Prophet
@@ -35,13 +104,8 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # -----------------------------------------------------------------------------
-# Configuration & Database Helpers
+# Database Helpers (using absolute paths)
 # -----------------------------------------------------------------------------
-USER_DB = 'USER.db'
-BUSINESS_DB = 'BUSINESS.db'
-SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'your-secret-key-change-in-production')
-JWT_ALGORITHM = 'HS256'
-
 @contextmanager
 def get_user_db():
     conn = sqlite3.connect(USER_DB, timeout=10)
@@ -383,8 +447,11 @@ def login_page():
         if st.form_submit_button("Login", use_container_width=True):
             if username and password:
                 ok, msg = login_user(username, password)
-                st.success(msg) if ok else st.error(msg)
-                if ok: st.rerun()
+                if ok:
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    st.error(msg)
             else:
                 st.error("Enter both fields")
 
@@ -409,7 +476,6 @@ def signup_page():
                     with get_business_db() as b_conn:
                         b_conn.execute("INSERT OR IGNORE INTO user_preferences (user_id) VALUES (?)", (uid,))
                     st.success("Account created! Please login.")
-                    st.balloons()
                     st.session_state.page = "Login"
                     st.rerun()
                 except sqlite3.IntegrityError:
@@ -485,7 +551,9 @@ def businesses_page():
     for _, row in df.iterrows():
         bid, active = row['id'], st.session_state.active_business_id == row['id']
         cols = st.columns([3,1,1,1])
-        cols[0].write(f"**{row['business_name']}** {'✅ ACTIVE' if active else ''}")
+        # Replace checkmark emoji with [ACTIVE]
+        active_tag = " [ACTIVE]" if active else ""
+        cols[0].write(f"**{row['business_name']}**{active_tag}")
         cols[0].caption(f"{row['business_type'] or 'N/A'} | {row['phone'] or 'N/A'}")
         if not active and cols[1].button("Set Active", key=f"set_{bid}"):
             with get_business_db() as conn:
@@ -543,7 +611,6 @@ def add_transaction_page():
                     conn.execute("INSERT INTO transactions (user_id, business_id, type, amount, category, description, date) VALUES (?,?,?,?,?,?,?)",
                                  (st.session_state.user_id, st.session_state.active_business_id, typ, amt, cat, desc, dt))
                 st.success("Transaction added!")
-                st.balloons()
                 st.rerun()
 
 def view_transactions_page():
@@ -1143,7 +1210,8 @@ def forecasting_page():
             if cnt >= 3:
                 st.success(f"**{lab}**: {cnt} ✓")
             else:
-                st.error(f"**{lab}**: {cnt} ✗ (need ≥3)")
+                # replace ✗ with 'X'
+                st.error(f"**{lab}**: {cnt} X (need ≥3)")
 
     target = st.radio("Forecast", ["Sales","Profit"], horizontal=True)
     freq_opt = st.selectbox("Frequency", freq_labels, index=2)
@@ -1256,7 +1324,8 @@ def render_sidebar():
             st.button("Sign Up", use_container_width=True, on_click=change_page, args=("Sign Up",))
 
 def main():
-    st.set_page_config(layout="wide", page_title="Business Analyzer", page_icon="📊")
+    st.set_page_config(layout="wide", page_title="Business Analyzer")
+    apply_custom_css()          # Apply custom styling
     init_user_db()
     init_business_db()
     init_inventory_tables()
@@ -1289,9 +1358,10 @@ def main():
         st.rerun()
 
 if __name__ == "__main__":
+    # Test database connection before starting
     try:
         with get_business_db() as conn:
             conn.execute("SELECT 1")
         main()
-    except:
-        st.error("Database connection failed. Ensure BUSINESS.db exists.")
+    except sqlite3.Error as e:
+        st.error(f"Database connection failed. Ensure BUSINESS.db exists at: {BUSINESS_DB}\nError: {e}")
