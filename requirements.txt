@@ -4,3 +4,4 @@ plotly
 bcrypt
 scikit-learn
 jwt
+linear regression
