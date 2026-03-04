@@ -22,10 +22,10 @@ from contextlib import contextmanager
 import os
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.colors import qualitative
 
 # -----------------------------------------------------------------------------
 # FIX 1: Use absolute paths for database files
-#        This ensures the files are found on Streamlit Cloud.
 # -----------------------------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 USER_DB = os.path.join(BASE_DIR, 'USER.db')
@@ -34,7 +34,7 @@ SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'your-secret-key-change-in-product
 JWT_ALGORITHM = 'HS256'
 
 # -----------------------------------------------------------------------------
-# Custom CSS for a modern, clean look (no emojis, just style)
+# Custom CSS for a modern, clean look
 # -----------------------------------------------------------------------------
 def apply_custom_css():
     st.markdown("""
@@ -91,6 +91,21 @@ def apply_custom_css():
         }
         </style>
     """, unsafe_allow_html=True)
+
+# -----------------------------------------------------------------------------
+# Color helper for consistent palettes
+# -----------------------------------------------------------------------------
+def get_color_sequence(n, palette='Set2'):
+    """Return a list of n colors from a named Plotly qualitative palette."""
+    palettes = {
+        'Set2': qualitative.Set2,
+        'Pastel': qualitative.Pastel,
+        'Plotly': qualitative.Plotly,
+        'Dark2': qualitative.Dark2,
+    }
+    colors = palettes.get(palette, qualitative.Set2)
+    # Cycle if n > len(colors)
+    return [colors[i % len(colors)] for i in range(n)]
 
 # Optional Prophet import
 try:
@@ -551,7 +566,6 @@ def businesses_page():
     for _, row in df.iterrows():
         bid, active = row['id'], st.session_state.active_business_id == row['id']
         cols = st.columns([3,1,1,1])
-        # Replace checkmark emoji with [ACTIVE]
         active_tag = " [ACTIVE]" if active else ""
         cols[0].write(f"**{row['business_name']}**{active_tag}")
         cols[0].caption(f"{row['business_type'] or 'N/A'} | {row['phone'] or 'N/A'}")
@@ -719,18 +733,34 @@ def sales_dashboard_page():
         return
     sales = df[df['type']=='Sales']
     exps = df[df['type']=='Expense']
+
+    # Sales by category (bar chart)
     if not sales.empty:
-        fig = px.bar(sales.groupby('category')['amount'].sum().reset_index(), x='category', y='amount', title="Sales by Category")
-        st.plotly_chart(fig)
+        sales_cat = sales.groupby('category')['amount'].sum().reset_index()
+        colors = get_color_sequence(len(sales_cat), 'Set2')
+        fig_sales = px.bar(sales_cat, x='category', y='amount', title="Sales by Category",
+                           color='category', color_discrete_sequence=colors)
+        st.plotly_chart(fig_sales, use_container_width=True)
+
+    # Expenses by category
     if not exps.empty:
-        fig = px.bar(exps.groupby('category')['amount'].sum().reset_index(), x='category', y='amount', title="Expenses by Category")
-        st.plotly_chart(fig)
+        exp_cat = exps.groupby('category')['amount'].sum().reset_index()
+        colors = get_color_sequence(len(exp_cat), 'Pastel')
+        fig_exp = px.bar(exp_cat, x='category', y='amount', title="Expenses by Category",
+                         color='category', color_discrete_sequence=colors)
+        st.plotly_chart(fig_exp, use_container_width=True)
+
+    # Monthly trend line
     df['date'] = pd.to_datetime(df['date'])
     df['month'] = df['date'].dt.to_period('M').astype(str)
-    monthly = df.groupby(['month','type'])['amount'].sum().unstack().fillna(0)
+    monthly = df.groupby(['month','type'])['amount'].sum().reset_index()
     if not monthly.empty:
-        fig = px.line(monthly.reset_index().melt(id_vars='month'), x='month', y='value', color='type', title="Monthly Trend")
-        st.plotly_chart(fig)
+        colors = {'Sales': '#2E86AB', 'Expense': '#A23B72'}  # custom colors
+        fig_trend = px.line(monthly, x='month', y='amount', color='type',
+                            title="Monthly Trend", color_discrete_map=colors,
+                            markers=True)
+        st.plotly_chart(fig_trend, use_container_width=True)
+
     total_sales = sales['amount'].sum() if not sales.empty else 0
     total_exp = exps['amount'].sum() if not exps.empty else 0
     profit = total_sales - total_exp
@@ -745,51 +775,95 @@ def analyze_data_page():
     st.title("Analyze File")
     file = st.file_uploader("Upload CSV/Excel", type=['csv','xlsx','xls'])
     if file:
-        df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
+        if file.name.endswith('.csv'):
+            df = pd.read_csv(file)
+        else:
+            df = pd.read_excel(file)
         st.session_state.uploaded_df = df
         st.success(f"Loaded {file.name}")
+
     if st.session_state.uploaded_df is not None:
         df = st.session_state.uploaded_df
-        tabs = st.tabs(["Preview","Stats","Visualize"])
+        tabs = st.tabs(["Preview", "Stats", "Visualize"])
+
         with tabs[0]:
             st.dataframe(df.head(100))
+
         with tabs[1]:
             st.dataframe(df.describe(include='all').T)
+
         with tabs[2]:
             num_cols = df.select_dtypes(include='number').columns.tolist()
             if not num_cols:
-                st.warning("No numeric columns")
+                st.warning("No numeric columns to visualize.")
             else:
-                chart = st.selectbox("Chart type", ["Bar","Line","Scatter","Histogram"])
-                if chart == "Bar":
-                    x = st.selectbox("X", df.columns)
-                    y = st.selectbox("Y", num_cols)
-                    if x and y:
-                        st.bar_chart(df.groupby(x)[y].sum())
-                elif chart == "Line":
-                    x = st.selectbox("X", df.columns)
-                    y = st.selectbox("Y", num_cols)
-                    if x and y:
-                        if df[x].dtype == 'object':
-                            try:
-                                df_sorted = df.copy()
-                                df_sorted[x] = pd.to_datetime(df_sorted[x])
-                                df_sorted = df_sorted.sort_values(x)
-                                st.line_chart(df_sorted.set_index(x)[y])
-                            except:
-                                st.line_chart(df.groupby(x)[y].sum().sort_index())
-                        else:
-                            st.line_chart(df.groupby(x)[y].sum().sort_index())
-                elif chart == "Scatter" and len(num_cols)>=2:
-                    x = st.selectbox("X", num_cols)
-                    y = st.selectbox("Y", num_cols)
-                    if x and y:
-                        st.scatter_chart(df[[x,y]].dropna())
-                elif chart == "Histogram":
+                chart_type = st.selectbox("Chart type", ["Bar", "Line", "Scatter", "Histogram", "Pie"])
+                if chart_type == "Bar":
+                    x_col = st.selectbox("X-axis (categorical)", df.columns)
+                    y_col = st.selectbox("Y-axis (numeric)", num_cols)
+                    if x_col and y_col:
+                        agg_df = df.groupby(x_col)[y_col].sum().reset_index()
+                        colors = get_color_sequence(len(agg_df), 'Set2')
+                        fig = px.bar(agg_df, x=x_col, y=y_col, color=x_col,
+                                     color_discrete_sequence=colors,
+                                     title=f"{y_col} by {x_col}")
+                        st.plotly_chart(fig, use_container_width=True)
+
+                elif chart_type == "Line":
+                    x_col = st.selectbox("X-axis (date/numeric)", df.columns)
+                    y_col = st.selectbox("Y-axis (numeric)", num_cols)
+                    if x_col and y_col:
+                        # Attempt to sort by x if it's date-like
+                        plot_df = df[[x_col, y_col]].dropna().copy()
+                        try:
+                            plot_df[x_col] = pd.to_datetime(plot_df[x_col])
+                            plot_df = plot_df.sort_values(x_col)
+                        except:
+                            pass
+                        fig = px.line(plot_df, x=x_col, y=y_col, markers=True,
+                                      title=f"{y_col} over {x_col}")
+                        st.plotly_chart(fig, use_container_width=True)
+
+                elif chart_type == "Scatter":
+                    if len(num_cols) >= 2:
+                        x_col = st.selectbox("X-axis", num_cols)
+                        y_col = st.selectbox("Y-axis", num_cols)
+                        color_col = st.selectbox("Color by (optional)", ["None"] + df.columns.tolist())
+                        if x_col and y_col:
+                            if color_col != "None":
+                                fig = px.scatter(df, x=x_col, y=y_col, color=color_col,
+                                                 title=f"{y_col} vs {x_col}")
+                            else:
+                                fig = px.scatter(df, x=x_col, y=y_col,
+                                                 title=f"{y_col} vs {x_col}")
+                            st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.warning("Need at least two numeric columns for scatter plot.")
+
+                elif chart_type == "Histogram":
                     col = st.selectbox("Column", num_cols)
                     if col:
-                        st.bar_chart(df[col].value_counts().sort_index())
-        if st.button("Clear"):
+                        fig = px.histogram(df, x=col, nbins=20,
+                                           title=f"Distribution of {col}")
+                        st.plotly_chart(fig, use_container_width=True)
+
+                elif chart_type == "Pie":
+                    # For pie, we need a categorical column and a numeric aggregate
+                    cat_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+                    if cat_cols:
+                        cat = st.selectbox("Category column", cat_cols)
+                        num = st.selectbox("Numeric column (sum)", num_cols)
+                        if cat and num:
+                            pie_df = df.groupby(cat)[num].sum().reset_index()
+                            colors = get_color_sequence(len(pie_df), 'Pastel')
+                            fig = px.pie(pie_df, values=num, names=cat,
+                                         title=f"{num} by {cat}",
+                                         color_discrete_sequence=colors)
+                            st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.warning("No categorical column found for pie chart.")
+
+        if st.button("Clear Uploaded Data"):
             st.session_state.uploaded_df = None
             st.rerun()
 
@@ -851,24 +925,40 @@ def profit_dashboard_page():
     st.divider()
     c1, c2 = st.columns(2)
     c1.metric("This Month Profit", f"₹{m['period_profit']:,.2f}", f"₹{m['period_sales']:,.2f} revenue")
+
+    # Current period bar chart
     fig = go.Figure(data=[
-        go.Bar(name='Revenue', x=['Current'], y=[m['period_sales']]),
-        go.Bar(name='Expenses', x=['Current'], y=[m['total_expenses']]),
-        go.Bar(name='Profit', x=['Current'], y=[m['period_profit']])
+        go.Bar(name='Revenue', x=['Current'], y=[m['period_sales']],
+               marker_color='#2E86AB'),
+        go.Bar(name='Expenses', x=['Current'], y=[m['total_expenses']],
+               marker_color='#A23B72'),
+        go.Bar(name='Profit', x=['Current'], y=[m['period_profit']],
+               marker_color='#F18F01')
     ])
-    fig.update_layout(barmode='group', height=300)
-    c2.plotly_chart(fig)
+    fig.update_layout(barmode='group', height=300, showlegend=True,
+                      title="Current Period Overview")
+    c2.plotly_chart(fig, use_container_width=True)
+
     st.divider()
     trend = get_monthly_profit_trend(st.session_state.user_id, st.session_state.active_business_id)
     if not trend.empty:
-        fig = px.line(trend, x='month_dt', y=['revenue','expenses','profit'], markers=True,
-                      title="6‑Month Trend", labels={'value':'Amount'})
-        fig.update_xaxes(tickformat='%b %Y')
-        st.plotly_chart(fig)
-        fig2 = px.bar(trend, x='month_dt', y='margin', title="Margin %", color='margin',
-                      color_continuous_scale='RdYlGn')
-        fig2.update_xaxes(tickformat='%b %Y')
-        st.plotly_chart(fig2)
+        # Multi-line chart for revenue, expenses, profit
+        fig_trend = px.line(trend, x='month_dt', y=['revenue', 'expenses', 'profit'],
+                            markers=True, title="6‑Month Trend",
+                            labels={'value': 'Amount', 'month_dt': 'Month'},
+                            color_discrete_map={'revenue': '#2E86AB',
+                                                'expenses': '#A23B72',
+                                                'profit': '#F18F01'})
+        fig_trend.update_xaxes(tickformat='%b %Y')
+        st.plotly_chart(fig_trend, use_container_width=True)
+
+        # Margin bar chart with color scale
+        fig_margin = px.bar(trend, x='month_dt', y='margin',
+                            title="Margin %", color='margin',
+                            color_continuous_scale='RdYlGn',
+                            labels={'margin': 'Margin %', 'month_dt': 'Month'})
+        fig_margin.update_xaxes(tickformat='%b %Y')
+        st.plotly_chart(fig_margin, use_container_width=True)
 
 def inventory_management_page():
     st.title("Inventory")
@@ -986,14 +1076,25 @@ def cogs_analysis_page():
     cols[1].metric("Total COGS", f"₹{tot_cogs:,.2f}")
     cols[2].metric("Gross Profit", f"₹{tot_profit:,.2f}")
     cols[3].metric("Avg Margin", f"{avg_margin:.1f}%")
+
+    # Dual-axis chart: revenue & cogs as bars, margin as line
     fig = go.Figure()
-    fig.add_trace(go.Bar(name='Revenue', x=df['month_dt'], y=df['revenue']))
-    fig.add_trace(go.Bar(name='COGS', x=df['month_dt'], y=df['cogs']))
+    fig.add_trace(go.Bar(name='Revenue', x=df['month_dt'], y=df['revenue'],
+                         marker_color='#2E86AB'))
+    fig.add_trace(go.Bar(name='COGS', x=df['month_dt'], y=df['cogs'],
+                         marker_color='#A23B72'))
     fig.add_trace(go.Scatter(name='Margin %', x=df['month_dt'], y=df['margin'],
-                              yaxis='y2', line=dict(color='red', width=3)))
-    fig.update_layout(yaxis=dict(title='Amount'), yaxis2=dict(title='Margin %', overlaying='y', side='right', range=[0,100]))
+                              yaxis='y2', line=dict(color='#F18F01', width=3),
+                              mode='lines+markers'))
+    fig.update_layout(
+        yaxis=dict(title='Amount (₹)', side='left'),
+        yaxis2=dict(title='Margin %', overlaying='y', side='right', range=[0, 100]),
+        hovermode='x unified',
+        barmode='group'
+    )
     fig.update_xaxes(tickformat='%b %Y')
-    st.plotly_chart(fig)
+    st.plotly_chart(fig, use_container_width=True)
+
     st.dataframe(df)
 
 # -----------------------------------------------------------------------------
@@ -1104,9 +1205,10 @@ def sales_trends_page():
     period = st.radio("View", ["Daily","Weekly","Monthly"], horizontal=True)
     freq = {"Daily":"D","Weekly":"W","Monthly":"M"}[period]
     grouped = df.set_index('date').resample(freq).sum().reset_index()
-    fig = px.line(grouped, x='date', y='amount', title=f"Sales ({period})", markers=True)
+    fig = px.line(grouped, x='date', y='amount', title=f"Sales ({period})", markers=True,
+                  line_shape='linear')
     fig.update_xaxes(tickformat='%b %d, %Y' if period=='Daily' else '%b %Y')
-    st.plotly_chart(fig)
+    st.plotly_chart(fig, use_container_width=True)
     cols = st.columns(3)
     cols[0].metric("Total", f"₹{grouped['amount'].sum():,.2f}")
     cols[1].metric("Avg/period", f"₹{grouped['amount'].mean():,.2f}")
@@ -1130,18 +1232,31 @@ def profit_margins_page():
     if 'Expense' not in pivot:
         pivot['Expense'] = 0
     pivot['Profit'] = pivot['Sales'] - pivot['Expense']
-    pivot['Margin'] = (pivot['Profit'] / pivot['Sales'] * 100).replace([np.inf,-np.inf],0).fillna(0)
-    period = st.radio("Resample", ["Daily","Weekly","Monthly"], horizontal=True)
-    freq = {"Daily":"D","Weekly":"W","Monthly":"M"}[period]
+    pivot['Margin'] = (pivot['Profit'] / pivot['Sales'] * 100).replace([np.inf, -np.inf], 0).fillna(0)
+
+    period = st.radio("Resample", ["Daily", "Weekly", "Monthly"], horizontal=True)
+    freq = {"Daily": "D", "Weekly": "W", "Monthly": "M"}[period]
     res = pivot.resample(freq).sum().reset_index()
+
+    # Dual-axis chart
     fig = go.Figure()
-    fig.add_trace(go.Bar(name='Sales', x=res['date'], y=res['Sales']))
-    fig.add_trace(go.Bar(name='Expenses', x=res['date'], y=res['Expense']))
+    fig.add_trace(go.Bar(name='Sales', x=res['date'], y=res['Sales'],
+                         marker_color='#2E86AB'))
+    fig.add_trace(go.Bar(name='Expenses', x=res['date'], y=res['Expense'],
+                         marker_color='#A23B72'))
     fig.add_trace(go.Scatter(name='Margin %', x=res['date'], y=res['Margin'],
-                              yaxis='y2', line=dict(color='red', width=3)))
-    fig.update_layout(yaxis=dict(title='Amount'), yaxis2=dict(title='Margin %', overlaying='y', side='right', range=[0,100]))
-    fig.update_xaxes(tickformat='%b %d, %Y' if period=='Daily' else '%b %Y')
-    st.plotly_chart(fig)
+                              yaxis='y2', line=dict(color='#F18F01', width=3),
+                              mode='lines+markers'))
+    fig.update_layout(
+        yaxis=dict(title='Amount (₹)', side='left'),
+        yaxis2=dict(title='Margin %', overlaying='y', side='right', range=[0, 100]),
+        hovermode='x unified',
+        barmode='group',
+        title=f"Profit Margins ({period})"
+    )
+    fig.update_xaxes(tickformat='%b %d, %Y' if period == 'Daily' else '%b %Y')
+    st.plotly_chart(fig, use_container_width=True)
+
     cols = st.columns(3)
     cols[0].metric("Total Profit", f"₹{res['Profit'].sum():,.2f}")
     cols[1].metric("Avg Margin", f"{res['Margin'].mean():.1f}%")
@@ -1154,22 +1269,30 @@ def expense_categories_page():
         return
     period = st.selectbox("Period", ["All time","Last 30 days","Last 7 days","This year"])
     pmap = {"All time":None, "Last 30 days":"month", "Last 7 days":"week", "This year":"year"}
+
+    # Expenses pie chart
     df_exp = get_expense_by_category(st.session_state.user_id, st.session_state.active_business_id, pmap[period])
     if df_exp.empty:
         st.info("No expenses")
     else:
-        fig = px.pie(df_exp, values='total', names='category', title=f"Expenses {period}")
-        st.plotly_chart(fig)
+        colors = get_color_sequence(len(df_exp), 'Pastel')
+        fig_exp = px.pie(df_exp, values='total', names='category',
+                         title=f"Expenses {period}", color_discrete_sequence=colors)
+        st.plotly_chart(fig_exp, use_container_width=True)
         df_exp['total'] = df_exp['total'].apply(lambda x: f"₹{x:,.2f}")
         st.dataframe(df_exp)
+
     st.divider()
     st.subheader("Sales by Category")
     df_sales = get_sales_by_category(st.session_state.user_id, st.session_state.active_business_id, pmap[period])
     if df_sales.empty:
         st.info("No sales")
     else:
-        fig = px.bar(df_sales, x='category', y='total', title=f"Sales {period}")
-        st.plotly_chart(fig)
+        colors = get_color_sequence(len(df_sales), 'Set2')
+        fig_sales = px.bar(df_sales, x='category', y='total',
+                           title=f"Sales {period}", color='category',
+                           color_discrete_sequence=colors)
+        st.plotly_chart(fig_sales, use_container_width=True)
         df_sales['total'] = df_sales['total'].apply(lambda x: f"₹{x:,.2f}")
         st.dataframe(df_sales)
 
@@ -1210,7 +1333,6 @@ def forecasting_page():
             if cnt >= 3:
                 st.success(f"**{lab}**: {cnt} ✓")
             else:
-                # replace ✗ with 'X'
                 st.error(f"**{lab}**: {cnt} X (need ≥3)")
 
     target = st.radio("Forecast", ["Sales","Profit"], horizontal=True)
@@ -1250,15 +1372,20 @@ def forecasting_page():
                                    target.lower(), freq)
         hist = hist[hist['y']>0]
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=hist['ds'], y=hist['y'], mode='lines+markers', name='Historical', line=dict(color='blue')))
-        fig.add_trace(go.Scatter(x=fc['ds'], y=fc['yhat'], mode='lines+markers', name='Forecast', line=dict(color='orange', dash='dash')))
-        fig.add_trace(go.Scatter(x=fc['ds'], y=fc['yhat_upper'], mode='lines', line=dict(width=0), showlegend=False))
-        fig.add_trace(go.Scatter(x=fc['ds'], y=fc['yhat_lower'], mode='lines', fill='tonexty', fillcolor='rgba(255,165,0,0.2)',
-                                  line=dict(width=0), name='Confidence'))
+        fig.add_trace(go.Scatter(x=hist['ds'], y=hist['y'], mode='lines+markers',
+                                  name='Historical', line=dict(color='#2E86AB', width=2)))
+        fig.add_trace(go.Scatter(x=fc['ds'], y=fc['yhat'], mode='lines+markers',
+                                  name='Forecast', line=dict(color='#F18F01', dash='dash', width=2)))
+        fig.add_trace(go.Scatter(x=fc['ds'], y=fc['yhat_upper'], mode='lines',
+                                  line=dict(width=0), showlegend=False))
+        fig.add_trace(go.Scatter(x=fc['ds'], y=fc['yhat_lower'], mode='lines',
+                                  fill='tonexty', fillcolor='rgba(241,143,1,0.2)',
+                                  line=dict(width=0), name='Confidence Interval'))
         fmt = '%b %d' if freq=='D' else ('%b %d, %Y' if freq=='W' else '%b %Y')
-        fig.update_layout(title=f"{target} Forecast ({freq_opt})", xaxis_title="Date", yaxis_title="Amount (₹)",
+        fig.update_layout(title=f"{target} Forecast ({freq_opt})",
+                          xaxis_title="Date", yaxis_title="Amount (₹)",
                           hovermode='x unified', xaxis=dict(tickformat=fmt))
-        st.plotly_chart(fig)
+        st.plotly_chart(fig, use_container_width=True)
         if not fc.empty:
             st.metric(f"Next {unit.capitalize()} Prediction", f"₹{fc.iloc[0]['yhat']:,.2f}")
         with st.expander("Forecast Table"):
@@ -1325,7 +1452,7 @@ def render_sidebar():
 
 def main():
     st.set_page_config(layout="wide", page_title="Business Analyzer")
-    apply_custom_css()          # Apply custom styling
+    apply_custom_css()
     init_user_db()
     init_business_db()
     init_inventory_tables()
