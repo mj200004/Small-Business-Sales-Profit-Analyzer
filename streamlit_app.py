@@ -34,7 +34,7 @@ SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'your-secret-key-change-in-product
 JWT_ALGORITHM = 'HS256'
 
 # -----------------------------------------------------------------------------
-# Custom CSS for a modern, clean look
+# Enhanced Custom CSS for a modern, clean look
 # -----------------------------------------------------------------------------
 def apply_custom_css():
     st.markdown("""
@@ -50,6 +50,11 @@ def apply_custom_css():
             border-bottom: 2px solid #f0f2f6;
             padding-bottom: 0.3rem;
         }
+        /* Sidebar gradient background */
+        [data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #f8fafc 0%, #e9edf5 100%);
+            border-right: 1px solid #d0d9e8;
+        }
         /* Buttons */
         .stButton > button {
             border-radius: 8px;
@@ -59,35 +64,61 @@ def apply_custom_css():
             padding: 0.5rem 1rem;
             font-weight: 500;
             transition: all 0.3s ease;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
         .stButton > button:hover {
             transform: translateY(-2px);
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            background: linear-gradient(135deg, #2B4C7C 0%, #1E3A5F 100%);
         }
         /* Metrics */
         [data-testid="stMetricValue"] {
             font-size: 2rem;
             color: #1E3A5F;
         }
-        /* Sidebar */
-        .css-1d391kg {
-            background-color: #f8fafc;
+        [data-testid="stMetricDelta"] {
+            font-size: 0.9rem;
         }
         /* DataFrames */
         .stDataFrame {
             border: 1px solid #e9ecef;
             border-radius: 8px;
+            overflow: hidden;
         }
         /* Expanders */
         .streamlit-expanderHeader {
             background-color: #f8fafc;
             border-radius: 8px;
             border: 1px solid #dee2e6;
+            font-weight: 500;
         }
         /* Success/Info/Warning boxes */
         .stAlert {
             border-radius: 8px;
             border-left: 4px solid;
+        }
+        /* Tabs */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 8px;
+        }
+        .stTabs [data-baseweb="tab"] {
+            border-radius: 8px 8px 0 0;
+            padding: 10px 16px;
+            background-color: #f8fafc;
+        }
+        .stTabs [aria-selected="true"] {
+            background-color: #1E3A5F !important;
+            color: white !important;
+        }
+        /* Radio buttons horizontal */
+        .stRadio > div {
+            display: flex;
+            gap: 20px;
+        }
+        /* Plotly charts container */
+        .js-plotly-plot {
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
         }
         </style>
     """, unsafe_allow_html=True)
@@ -104,7 +135,6 @@ def get_color_sequence(n, palette='Set2'):
         'Dark2': qualitative.Dark2,
     }
     colors = palettes.get(palette, qualitative.Set2)
-    # Cycle if n > len(colors)
     return [colors[i % len(colors)] for i in range(n)]
 
 # Optional Prophet import
@@ -682,20 +712,37 @@ def import_transactions_page():
     cat_col = st.selectbox("Category column", ["None"]+cols, key="cat")
     desc_col = st.selectbox("Description column", ["None"]+cols, key="desc")
     default_type = st.selectbox("Default type", ["Sales","Expense"])
+
     if amt_col != "None" and st.button("IMPORT", type="primary"):
         success = 0
         errors = 0
+        error_details = []
         prog = st.progress(0)
         status = st.empty()
+
         for idx, row in df.iterrows():
             try:
-                if pd.isna(row[amt_col]):
+                # --- Clean amount ---
+                raw_amt = row[amt_col]
+                if pd.isna(raw_amt):
                     errors += 1
+                    error_details.append(f"Row {idx+2}: Amount is empty")
                     continue
-                amt = float(row[amt_col])
+
+                amt_str = str(raw_amt).replace('₹', '').replace(',', '').strip()
+                amt_str = ''.join(c for c in amt_str if c.isdigit() or c in '.-')
+                if not amt_str:
+                    errors += 1
+                    error_details.append(f"Row {idx+2}: Amount contains no valid number")
+                    continue
+
+                amt = float(amt_str)
                 if amt <= 0:
                     errors += 1
+                    error_details.append(f"Row {idx+2}: Amount is not positive ({amt})")
                     continue
+
+                # --- Determine transaction type ---
                 ttype = default_type
                 if typ_col != "None" and pd.notna(row[typ_col]):
                     val = str(row[typ_col]).lower()
@@ -703,19 +750,42 @@ def import_transactions_page():
                         ttype = 'Sales'
                     elif 'expense' in val or 'cost' in val:
                         ttype = 'Expense'
-                cat = str(row[cat_col])[:50] if cat_col != "None" and pd.notna(row[cat_col]) else "Uncategorized"
-                desc = str(row[desc_col])[:200] if desc_col != "None" and pd.notna(row[desc_col]) else f"Row {idx+1}"
+
+                # --- Category ---
+                cat = "Uncategorized"
+                if cat_col != "None" and pd.notna(row[cat_col]):
+                    cat = str(row[cat_col])[:50]
+
+                # --- Description ---
+                desc = f"Row {idx+1}"
+                if desc_col != "None" and pd.notna(row[desc_col]):
+                    desc = str(row[desc_col])[:200]
+
+                # --- Insert into database ---
                 with get_business_db() as conn:
-                    conn.execute("INSERT INTO transactions (user_id, business_id, type, amount, category, description) VALUES (?,?,?,?,?,?)",
-                                 (st.session_state.user_id, st.session_state.active_business_id, ttype, amt, cat, desc))
+                    conn.execute("""
+                        INSERT INTO transactions (user_id, business_id, type, amount, category, description)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (st.session_state.user_id, st.session_state.active_business_id,
+                          ttype, amt, cat, desc))
                 success += 1
-            except:
+
+            except Exception as e:
                 errors += 1
+                error_details.append(f"Row {idx+2}: {str(e)[:100]}")
+
             prog.progress((idx+1)/len(df))
             status.text(f"Processed {idx+1}/{len(df)}")
+
         prog.empty()
         status.empty()
         st.success(f"Imported {success} transactions, {errors} errors.")
+
+        if errors > 0:
+            with st.expander("Show sample errors (first 20)"):
+                for err in error_details[:20]:
+                    st.write(err)
+
         if success and st.button("View Transactions"):
             st.session_state.page = "View Transactions"
             st.rerun()
@@ -755,7 +825,7 @@ def sales_dashboard_page():
     df['month'] = df['date'].dt.to_period('M').astype(str)
     monthly = df.groupby(['month','type'])['amount'].sum().reset_index()
     if not monthly.empty:
-        colors = {'Sales': '#2E86AB', 'Expense': '#A23B72'}  # custom colors
+        colors = {'Sales': '#2E86AB', 'Expense': '#A23B72'}
         fig_trend = px.line(monthly, x='month', y='amount', color='type',
                             title="Monthly Trend", color_discrete_map=colors,
                             markers=True)
@@ -813,7 +883,6 @@ def analyze_data_page():
                     x_col = st.selectbox("X-axis (date/numeric)", df.columns)
                     y_col = st.selectbox("Y-axis (numeric)", num_cols)
                     if x_col and y_col:
-                        # Attempt to sort by x if it's date-like
                         plot_df = df[[x_col, y_col]].dropna().copy()
                         try:
                             plot_df[x_col] = pd.to_datetime(plot_df[x_col])
@@ -848,7 +917,6 @@ def analyze_data_page():
                         st.plotly_chart(fig, use_container_width=True)
 
                 elif chart_type == "Pie":
-                    # For pie, we need a categorical column and a numeric aggregate
                     cat_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
                     if cat_cols:
                         cat = st.selectbox("Category column", cat_cols)
