@@ -1,12 +1,14 @@
 """
-Business Analyzer – All Milestones (1, 2, 3)
----------------------------------------------
+Business Analyzer – All Milestones (1, 2, 3, 4)
+-----------------------------------------------
 A comprehensive business management tool with:
 - Authentication & user management (JWT + bcrypt)
 - Business profiles & transaction logging
 - Inventory tracking & COGS calculation
 - Advanced analytics: interactive charts, category breakdowns,
   AI-based forecasting using Prophet (with linear regression fallback)
+- Report generation (PDF/Excel) with email delivery
+- Admin dashboard for system monitoring
 
 Author: Final Year Project
 """
@@ -23,6 +25,25 @@ import os
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.colors import qualitative
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
+import io
+import tempfile
+from fpdf import FPDF
+import warnings
+warnings.filterwarnings('ignore')
+
+# Optional Prophet import
+try:
+    from prophet import Prophet
+    prophet_available = True
+except ImportError:
+    prophet_available = False
+
+from sklearn.linear_model import LinearRegression
 
 # -----------------------------------------------------------------------------
 # FIX 1: Use absolute paths for database files
@@ -137,17 +158,6 @@ def get_color_sequence(n, palette='Set2'):
     colors = palettes.get(palette, qualitative.Set2)
     return [colors[i % len(colors)] for i in range(n)]
 
-# Optional Prophet import
-try:
-    from prophet import Prophet
-    prophet_available = True
-except ImportError:
-    prophet_available = False
-
-from sklearn.linear_model import LinearRegression
-import warnings
-warnings.filterwarnings('ignore')
-
 # -----------------------------------------------------------------------------
 # Database Helpers (using absolute paths)
 # -----------------------------------------------------------------------------
@@ -172,7 +182,7 @@ def get_business_db():
         conn.close()
 
 # -----------------------------------------------------------------------------
-# Database Initialization
+# Database Initialization (including new tables for Milestone 4)
 # -----------------------------------------------------------------------------
 def init_user_db():
     with get_user_db() as conn:
@@ -210,9 +220,7 @@ def init_business_db():
             user_id INTEGER PRIMARY KEY,
             active_business_id INTEGER
         )''')
-
-def init_inventory_tables():
-    with get_business_db() as conn:
+        # Inventory tables
         conn.execute('''CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -238,6 +246,25 @@ def init_inventory_tables():
             movement_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             notes TEXT,
             FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+        )''')
+        # New table for email configuration (Milestone 4)
+        conn.execute('''CREATE TABLE IF NOT EXISTS email_config (
+            user_id INTEGER PRIMARY KEY,
+            smtp_server TEXT NOT NULL,
+            smtp_port INTEGER NOT NULL,
+            smtp_username TEXT,
+            smtp_password TEXT,
+            from_email TEXT NOT NULL,
+            use_tls BOOLEAN DEFAULT 1,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )''')
+        # Optional admin log table
+        conn.execute('''CREATE TABLE IF NOT EXISTS admin_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_user_id INTEGER,
+            action TEXT,
+            target_user_id INTEGER,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''')
 
 # -----------------------------------------------------------------------------
@@ -328,8 +355,11 @@ def can_edit_transactions():
 def can_delete_transactions():
     return st.session_state.role == 'Owner'
 
+def is_admin():
+    return st.session_state.role == 'Owner'   # Owners act as admins
+
 # -----------------------------------------------------------------------------
-# Profit Calculation Functions
+# Profit Calculation Functions (unchanged)
 # -----------------------------------------------------------------------------
 def calculate_profit_metrics(user_id, business_id, period='monthly'):
     with get_business_db() as conn:
@@ -396,7 +426,7 @@ def get_monthly_profit_trend(user_id, business_id, months=6):
     return df
 
 # -----------------------------------------------------------------------------
-# Inventory Management Functions
+# Inventory Management Functions (unchanged)
 # -----------------------------------------------------------------------------
 def add_product(user_id, business_id, name, sku, qty, cost, price, reorder, category):
     with get_business_db() as conn:
@@ -469,7 +499,334 @@ def get_inventory_value(user_id, business_id):
     return {k: res[k] or 0 for k in ['product_count', 'total_units', 'total_value']}
 
 # -----------------------------------------------------------------------------
-# Page Functions – Milestones 1 & 2
+# Milestone 3 – Advanced Analytics Functions (unchanged)
+# -----------------------------------------------------------------------------
+def prepare_time_series(user_id, business_id, value_type='sales', freq='M'):
+    with get_business_db() as conn:
+        df = pd.read_sql("SELECT date, type, amount FROM transactions WHERE user_id=? AND business_id=? ORDER BY date",
+                         conn, params=(user_id, business_id))
+    if df.empty:
+        return pd.DataFrame()
+    df['date'] = pd.to_datetime(df['date'])
+    if value_type == 'sales':
+        ts = df[df['type']=='Sales'].groupby('date')['amount'].sum().reset_index()
+    elif value_type == 'profit':
+        sales = df[df['type']=='Sales'].groupby('date')['amount'].sum()
+        exp = df[df['type']=='Expense'].groupby('date')['amount'].sum()
+        profit = (sales - exp).fillna(0).reset_index()
+        profit.columns = ['date','amount']
+        ts = profit
+    else:
+        return pd.DataFrame()
+    if ts.empty:
+        return ts
+    ts = ts.set_index('date').resample(freq).sum().reset_index()
+    ts.columns = ['ds','y']
+    return ts.dropna()
+
+def forecast_with_prophet(df, periods, freq):
+    if not prophet_available:
+        return None
+    try:
+        model = Prophet(yearly_seasonality=True, weekly_seasonality=(freq=='W'), daily_seasonality=False,
+                        seasonality_mode='multiplicative')
+        model.fit(df)
+        future = model.make_future_dataframe(periods=periods, freq=freq)
+        return model.predict(future)[['ds','yhat','yhat_lower','yhat_upper']]
+    except Exception as e:
+        st.error(f"Prophet error: {e}")
+        return None
+
+def forecast_with_linear_regression(df, periods, freq):
+    try:
+        df = df.copy()
+        df['days'] = (df['ds'] - df['ds'].min()).dt.days
+        X = df['days'].values.reshape(-1,1)
+        y = df['y'].values
+        model = LinearRegression().fit(X, y)
+        last = df['days'].max()
+        step = 30 if freq=='M' else (7 if freq=='W' else 1)
+        fut = np.arange(last+step, last+step*periods+step, step).reshape(-1,1)
+        pred = model.predict(fut)
+        dates = [df['ds'].min() + timedelta(days=int(d)) for d in fut.flatten()]
+        return pd.DataFrame({'ds':dates, 'yhat':pred, 'yhat_lower':pred*0.9, 'yhat_upper':pred*1.1})
+    except Exception as e:
+        st.error(f"LinReg error: {e}")
+        return None
+
+def get_forecast(user_id, business_id, target, periods, freq, method='auto'):
+    ts = prepare_time_series(user_id, business_id, target, freq)
+    if ts.empty or len(ts) < 3:
+        return None
+    if method == 'auto':
+        method = 'prophet' if prophet_available else 'linear'
+    if method == 'prophet' and prophet_available:
+        return forecast_with_prophet(ts, periods, freq)
+    return forecast_with_linear_regression(ts, periods, freq)
+
+def get_expense_by_category(user_id, business_id, period):
+    with get_business_db() as conn:
+        q = "SELECT category, SUM(amount) as total FROM transactions WHERE user_id=? AND business_id=? AND type='Expense'"
+        params = [user_id, business_id]
+        if period == 'week':
+            q += " AND date >= date('now','-7 days')"
+        elif period == 'month':
+            q += " AND date >= date('now','-30 days')"
+        elif period == 'year':
+            q += " AND date >= date('now','-1 year')"
+        q += " GROUP BY category ORDER BY total DESC"
+        return pd.read_sql(q, conn, params=params)
+
+def get_sales_by_category(user_id, business_id, period):
+    with get_business_db() as conn:
+        q = "SELECT category, SUM(amount) as total FROM transactions WHERE user_id=? AND business_id=? AND type='Sales'"
+        params = [user_id, business_id]
+        if period == 'week':
+            q += " AND date >= date('now','-7 days')"
+        elif period == 'month':
+            q += " AND date >= date('now','-30 days')"
+        elif period == 'year':
+            q += " AND date >= date('now','-1 year')"
+        q += " GROUP BY category ORDER BY total DESC"
+        return pd.read_sql(q, conn, params=params)
+
+# -----------------------------------------------------------------------------
+# Milestone 4 – Report Generation Functions
+# -----------------------------------------------------------------------------
+def get_report_data(user_id, business_id, start_date, end_date):
+    """Fetch transactions, summary, and inventory data for the report."""
+    with get_business_db() as conn:
+        # Transactions within date range
+        df = pd.read_sql("""
+            SELECT date, type, amount, category, description
+            FROM transactions
+            WHERE user_id=? AND business_id=?
+              AND date BETWEEN ? AND ?
+            ORDER BY date
+        """, conn, params=(user_id, business_id, start_date, end_date))
+        # Summary totals
+        summary = pd.read_sql("""
+            SELECT type, COUNT(*) as count, SUM(amount) as total
+            FROM transactions
+            WHERE user_id=? AND business_id=?
+              AND date BETWEEN ? AND ?
+            GROUP BY type
+        """, conn, params=(user_id, business_id, start_date, end_date))
+        # Inventory (optional)
+        inventory = pd.read_sql("""
+            SELECT product_name, sku, quantity, cost_price, selling_price
+            FROM products
+            WHERE user_id=? AND business_id=?
+        """, conn, params=(user_id, business_id))
+    return {
+        'transactions': df,
+        'summary': summary,
+        'inventory': inventory
+    }
+
+def generate_excel_report(data_dict, start_date, end_date):
+    """Create an Excel file in memory with multiple sheets."""
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        # Summary sheet
+        summary_df = data_dict['summary']
+        if not summary_df.empty:
+            summary_df.to_excel(writer, sheet_name='Summary', index=False)
+        else:
+            pd.DataFrame({'Message': ['No data for this period']}).to_excel(writer, sheet_name='Summary', index=False)
+
+        # Transactions sheet
+        tx_df = data_dict['transactions']
+        tx_df.to_excel(writer, sheet_name='Transactions', index=False)
+
+        # Inventory sheet
+        inv_df = data_dict['inventory']
+        if not inv_df.empty:
+            inv_df.to_excel(writer, sheet_name='Inventory', index=False)
+
+        # Add a cover sheet with report info
+        info = pd.DataFrame({
+            'Report Period': [f"{start_date} to {end_date}"],
+            'Generated On': [datetime.now().strftime('%Y-%m-%d %H:%M:%S')]
+        })
+        info.to_excel(writer, sheet_name='Report Info', index=False)
+
+    output.seek(0)
+    return output
+
+class PDF(FPDF):
+    def header(self):
+        self.set_font('Arial', 'B', 12)
+        self.cell(0, 10, 'Business Analyzer Report', 0, 1, 'C')
+        self.ln(10)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Arial', 'I', 8)
+        self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+
+def generate_pdf_report(data_dict, start_date, end_date):
+    """Create a PDF report (simplified table layout)."""
+    pdf = PDF()
+    pdf.add_page()
+    pdf.set_font('Arial', 'B', 10)
+
+    # Report header
+    pdf.cell(0, 10, f"Period: {start_date} to {end_date}", 0, 1)
+    pdf.cell(0, 10, f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", 0, 1)
+    pdf.ln(5)
+
+    # Summary
+    pdf.set_font('Arial', 'B', 10)
+    pdf.cell(0, 10, 'Summary', 0, 1)
+    pdf.set_font('Arial', '', 9)
+    summary = data_dict['summary']
+    if not summary.empty:
+        for _, row in summary.iterrows():
+            pdf.cell(40, 8, row['type'], 1)
+            pdf.cell(30, 8, str(row['count']), 1)
+            pdf.cell(40, 8, f"${row['total']:,.2f}", 1)
+            pdf.ln(8)
+    else:
+        pdf.cell(0, 8, "No summary data", 0, 1)
+    pdf.ln(5)
+
+    # Transactions (first 20 rows to avoid huge PDF)
+    pdf.set_font('Arial', 'B', 10)
+    pdf.cell(0, 10, 'Transactions (first 20 shown)', 0, 1)
+    pdf.set_font('Arial', '', 8)
+    tx = data_dict['transactions'].head(20)
+    if not tx.empty:
+        # Headers
+        pdf.cell(25, 8, 'Date', 1)
+        pdf.cell(20, 8, 'Type', 1)
+        pdf.cell(25, 8, 'Amount', 1)
+        pdf.cell(30, 8, 'Category', 1)
+        pdf.cell(0, 8, 'Description', 1)
+        pdf.ln(8)
+        for _, row in tx.iterrows():
+            pdf.cell(25, 8, str(row['date'])[:10], 1)
+            pdf.cell(20, 8, row['type'][:10], 1)
+            pdf.cell(25, 8, f"${row['amount']:,.2f}", 1)
+            pdf.cell(30, 8, (row['category'] or '')[:15], 1)
+            pdf.cell(0, 8, (row['description'] or '')[:30], 1)
+            pdf.ln(8)
+    else:
+        pdf.cell(0, 8, "No transactions", 0, 1)
+    pdf.ln(5)
+
+    # Inventory
+    pdf.set_font('Arial', 'B', 10)
+    pdf.cell(0, 10, 'Inventory', 0, 1)
+    pdf.set_font('Arial', '', 8)
+    inv = data_dict['inventory']
+    if not inv.empty:
+        pdf.cell(40, 8, 'Product', 1)
+        pdf.cell(25, 8, 'SKU', 1)
+        pdf.cell(20, 8, 'Qty', 1)
+        pdf.cell(25, 8, 'Cost', 1)
+        pdf.cell(25, 8, 'Price', 1)
+        pdf.ln(8)
+        for _, row in inv.iterrows():
+            pdf.cell(40, 8, row['product_name'][:20], 1)
+            pdf.cell(25, 8, row['sku'][:10], 1)
+            pdf.cell(20, 8, str(row['quantity']), 1)
+            pdf.cell(25, 8, f"${row['cost_price']:,.2f}", 1)
+            pdf.cell(25, 8, f"${row['selling_price']:,.2f}", 1)
+            pdf.ln(8)
+    else:
+        pdf.cell(0, 8, "No inventory data", 0, 1)
+
+    return pdf.output(dest='S').encode('latin-1')
+
+# -----------------------------------------------------------------------------
+# Milestone 4 – Email Functions
+# -----------------------------------------------------------------------------
+def save_email_config(user_id, smtp_server, smtp_port, smtp_username, smtp_password, from_email, use_tls=True):
+    with get_business_db() as conn:
+        conn.execute("""
+            INSERT OR REPLACE INTO email_config
+            (user_id, smtp_server, smtp_port, smtp_username, smtp_password, from_email, use_tls)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, smtp_server, smtp_port, smtp_username, smtp_password, from_email, use_tls))
+
+def get_email_config(user_id):
+    with get_business_db() as conn:
+        row = conn.execute("SELECT * FROM email_config WHERE user_id = ?", (user_id,)).fetchone()
+    return dict(row) if row else None
+
+def send_email_report(to_email, subject, body, attachment_bytes, attachment_filename, smtp_config):
+    """Send an email with attachment using provided SMTP settings."""
+    msg = MIMEMultipart()
+    msg['From'] = smtp_config['from_email']
+    msg['To'] = to_email
+    msg['Subject'] = subject
+    msg.attach(MIMEText(body, 'plain'))
+
+    # Attach file
+    part = MIMEBase('application', 'octet-stream')
+    part.set_payload(attachment_bytes)
+    encoders.encode_base64(part)
+    part.add_header('Content-Disposition', f'attachment; filename={attachment_filename}')
+    msg.attach(part)
+
+    try:
+        server = smtplib.SMTP(smtp_config['smtp_server'], smtp_config['smtp_port'])
+        if smtp_config.get('use_tls', True):
+            server.starttls()
+        if smtp_config['smtp_username'] and smtp_config['smtp_password']:
+            server.login(smtp_config['smtp_username'], smtp_config['smtp_password'])
+        server.send_message(msg)
+        server.quit()
+        return True, "Email sent successfully."
+    except Exception as e:
+        return False, str(e)
+
+# -----------------------------------------------------------------------------
+# Milestone 4 – Admin Dashboard Functions
+# -----------------------------------------------------------------------------
+def get_system_stats():
+    with get_user_db() as u_conn:
+        total_users = u_conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    with get_business_db() as b_conn:
+        total_businesses = b_conn.execute("SELECT COUNT(*) FROM businesses").fetchone()[0]
+        total_transactions = b_conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0]
+        total_products = b_conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]
+    return {
+        'users': total_users,
+        'businesses': total_businesses,
+        'transactions': total_transactions,
+        'products': total_products
+    }
+
+def get_all_users_with_stats():
+    """Return a DataFrame with user info plus business/transaction counts."""
+    with get_user_db() as u_conn:
+        users = pd.read_sql("SELECT id, username, email, role, created_at FROM users", u_conn)
+    with get_business_db() as b_conn:
+        # Business counts per user
+        biz_counts = pd.read_sql("SELECT user_id, COUNT(*) as business_count FROM businesses GROUP BY user_id", b_conn)
+        tx_counts = pd.read_sql("SELECT user_id, COUNT(*) as transaction_count FROM transactions GROUP BY user_id", b_conn)
+    users = users.merge(biz_counts, on='user_id', how='left').fillna(0)
+    users = users.merge(tx_counts, on='user_id', how='left').fillna(0)
+    users['business_count'] = users['business_count'].astype(int)
+    users['transaction_count'] = users['transaction_count'].astype(int)
+    return users
+
+def delete_user(user_id):
+    """Delete a user and all their associated data (cascades via foreign keys)."""
+    with get_user_db() as u_conn:
+        u_conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    # Data in BUSINESS.db will be orphaned (no FK), so we need to manually delete
+    with get_business_db() as b_conn:
+        b_conn.execute("DELETE FROM transactions WHERE user_id = ?", (user_id,))
+        b_conn.execute("DELETE FROM businesses WHERE user_id = ?", (user_id,))
+        b_conn.execute("DELETE FROM products WHERE user_id = ?", (user_id,))
+        b_conn.execute("DELETE FROM email_config WHERE user_id = ?", (user_id,))
+        b_conn.execute("DELETE FROM user_preferences WHERE user_id = ?", (user_id,))
+
+# -----------------------------------------------------------------------------
+# Page Functions – Milestones 1–3 (unchanged except minor fixes)
 # -----------------------------------------------------------------------------
 def home_page():
     st.title("Business Analyzer")
@@ -482,6 +839,9 @@ def home_page():
 
     ### Milestone 3 – Advanced Analytics
     **Features:** Interactive trends, profit margins, category breakdowns, AI forecasting.
+
+    ### Milestone 4 – Reports, Admin, and Deployment
+    **Features:** PDF/Excel report generation, email reports, admin dashboard.
     """)
 
 def login_page():
@@ -970,6 +1330,8 @@ def profile_page():
             with get_business_db() as b_conn:
                 b_conn.execute("DELETE FROM transactions WHERE user_id = ?", (st.session_state.user_id,))
                 b_conn.execute("DELETE FROM businesses WHERE user_id = ?", (st.session_state.user_id,))
+                b_conn.execute("DELETE FROM products WHERE user_id = ?", (st.session_state.user_id,))
+                b_conn.execute("DELETE FROM email_config WHERE user_id = ?", (st.session_state.user_id,))
                 b_conn.execute("DELETE FROM user_preferences WHERE user_id = ?", (st.session_state.user_id,))
             with get_user_db() as conn:
                 conn.execute("DELETE FROM users WHERE id = ?", (st.session_state.user_id,))
@@ -1164,98 +1526,6 @@ def cogs_analysis_page():
     st.plotly_chart(fig, use_container_width=True)
 
     st.dataframe(df)
-
-# -----------------------------------------------------------------------------
-# Milestone 3 – Advanced Analytics Functions
-# -----------------------------------------------------------------------------
-def prepare_time_series(user_id, business_id, value_type='sales', freq='M'):
-    with get_business_db() as conn:
-        df = pd.read_sql("SELECT date, type, amount FROM transactions WHERE user_id=? AND business_id=? ORDER BY date",
-                         conn, params=(user_id, business_id))
-    if df.empty:
-        return pd.DataFrame()
-    df['date'] = pd.to_datetime(df['date'])
-    if value_type == 'sales':
-        ts = df[df['type']=='Sales'].groupby('date')['amount'].sum().reset_index()
-    elif value_type == 'profit':
-        sales = df[df['type']=='Sales'].groupby('date')['amount'].sum()
-        exp = df[df['type']=='Expense'].groupby('date')['amount'].sum()
-        profit = (sales - exp).fillna(0).reset_index()
-        profit.columns = ['date','amount']
-        ts = profit
-    else:
-        return pd.DataFrame()
-    if ts.empty:
-        return ts
-    ts = ts.set_index('date').resample(freq).sum().reset_index()
-    ts.columns = ['ds','y']
-    return ts.dropna()
-
-def forecast_with_prophet(df, periods, freq):
-    if not prophet_available:
-        return None
-    try:
-        model = Prophet(yearly_seasonality=True, weekly_seasonality=(freq=='W'), daily_seasonality=False,
-                        seasonality_mode='multiplicative')
-        model.fit(df)
-        future = model.make_future_dataframe(periods=periods, freq=freq)
-        return model.predict(future)[['ds','yhat','yhat_lower','yhat_upper']]
-    except Exception as e:
-        st.error(f"Prophet error: {e}")
-        return None
-
-def forecast_with_linear_regression(df, periods, freq):
-    try:
-        df = df.copy()
-        df['days'] = (df['ds'] - df['ds'].min()).dt.days
-        X = df['days'].values.reshape(-1,1)
-        y = df['y'].values
-        model = LinearRegression().fit(X, y)
-        last = df['days'].max()
-        step = 30 if freq=='M' else (7 if freq=='W' else 1)
-        fut = np.arange(last+step, last+step*periods+step, step).reshape(-1,1)
-        pred = model.predict(fut)
-        dates = [df['ds'].min() + timedelta(days=int(d)) for d in fut.flatten()]
-        return pd.DataFrame({'ds':dates, 'yhat':pred, 'yhat_lower':pred*0.9, 'yhat_upper':pred*1.1})
-    except Exception as e:
-        st.error(f"LinReg error: {e}")
-        return None
-
-def get_forecast(user_id, business_id, target, periods, freq, method='auto'):
-    ts = prepare_time_series(user_id, business_id, target, freq)
-    if ts.empty or len(ts) < 3:
-        return None
-    if method == 'auto':
-        method = 'prophet' if prophet_available else 'linear'
-    if method == 'prophet' and prophet_available:
-        return forecast_with_prophet(ts, periods, freq)
-    return forecast_with_linear_regression(ts, periods, freq)
-
-def get_expense_by_category(user_id, business_id, period):
-    with get_business_db() as conn:
-        q = "SELECT category, SUM(amount) as total FROM transactions WHERE user_id=? AND business_id=? AND type='Expense'"
-        params = [user_id, business_id]
-        if period == 'week':
-            q += " AND date >= date('now','-7 days')"
-        elif period == 'month':
-            q += " AND date >= date('now','-30 days')"
-        elif period == 'year':
-            q += " AND date >= date('now','-1 year')"
-        q += " GROUP BY category ORDER BY total DESC"
-        return pd.read_sql(q, conn, params=params)
-
-def get_sales_by_category(user_id, business_id, period):
-    with get_business_db() as conn:
-        q = "SELECT category, SUM(amount) as total FROM transactions WHERE user_id=? AND business_id=? AND type='Sales'"
-        params = [user_id, business_id]
-        if period == 'week':
-            q += " AND date >= date('now','-7 days')"
-        elif period == 'month':
-            q += " AND date >= date('now','-30 days')"
-        elif period == 'year':
-            q += " AND date >= date('now','-1 year')"
-        q += " GROUP BY category ORDER BY total DESC"
-        return pd.read_sql(q, conn, params=params)
 
 def sales_trends_page():
     st.title("Sales Trends")
@@ -1464,7 +1734,168 @@ def forecasting_page():
             st.dataframe(disp)
 
 # -----------------------------------------------------------------------------
-# Sidebar & Routing
+# Milestone 4 – New Pages
+# -----------------------------------------------------------------------------
+def report_generation_page():
+    st.title("Generate Report")
+    if not st.session_state.active_business_id:
+        st.warning("Select an active business first.")
+        return
+
+    with st.form("report_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            start_date = st.date_input("Start Date", datetime.now().date() - timedelta(days=30))
+        with col2:
+            end_date = st.date_input("End Date", datetime.now().date())
+
+        report_type = st.radio("Report Format", ["Excel", "PDF"], horizontal=True)
+        include_inventory = st.checkbox("Include Inventory Data", value=True)
+
+        # Email option
+        send_email = st.checkbox("Send report via email")
+        if send_email:
+            email_to = st.text_input("Recipient Email")
+            # Fetch existing email config if any
+            config = get_email_config(st.session_state.user_id)
+            if config:
+                st.info("Email settings loaded from your profile.")
+            else:
+                st.warning("Please configure email settings below.")
+        else:
+            email_to = None
+
+        submitted = st.form_submit_button("Generate Report", type="primary")
+
+    if submitted:
+        if start_date > end_date:
+            st.error("Start date must be before end date.")
+            return
+
+        # Fetch data
+        data = get_report_data(st.session_state.user_id, st.session_state.active_business_id,
+                               start_date, end_date)
+        if data['transactions'].empty and data['inventory'].empty:
+            st.warning("No data for the selected period.")
+            return
+
+        # Generate file
+        if report_type == "Excel":
+            excel_bytes = generate_excel_report(data, start_date, end_date)
+            st.download_button(
+                label="Download Excel Report",
+                data=excel_bytes,
+                file_name=f"report_{start_date}_to_{end_date}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            attachment = excel_bytes.getvalue()
+            filename = f"report_{start_date}_to_{end_date}.xlsx"
+        else:  # PDF
+            pdf_bytes = generate_pdf_report(data, start_date, end_date)
+            st.download_button(
+                label="Download PDF Report",
+                data=pdf_bytes,
+                file_name=f"report_{start_date}_to_{end_date}.pdf",
+                mime="application/pdf"
+            )
+            attachment = pdf_bytes
+            filename = f"report_{start_date}_to_{end_date}.pdf"
+
+        # Email if requested
+        if send_email and email_to:
+            config = get_email_config(st.session_state.user_id)
+            if not config:
+                st.error("No email configuration found. Please set up in Admin section.")
+            else:
+                subject = f"Business Report {start_date} to {end_date}"
+                body = f"Please find attached your business report for period {start_date} to {end_date}."
+                ok, msg = send_email_report(email_to, subject, body, attachment, filename, config)
+                if ok:
+                    st.success(msg)
+                else:
+                    st.error(f"Email failed: {msg}")
+
+def email_config_page():
+    st.title("Email Configuration")
+    if not is_admin():
+        st.error("Only Owners can configure email settings.")
+        return
+
+    config = get_email_config(st.session_state.user_id)
+    with st.form("email_config_form"):
+        smtp_server = st.text_input("SMTP Server", value=config['smtp_server'] if config else "smtp.gmail.com")
+        smtp_port = st.number_input("SMTP Port", value=config['smtp_port'] if config else 587, step=1)
+        smtp_username = st.text_input("SMTP Username", value=config['smtp_username'] if config else "")
+        smtp_password = st.text_input("SMTP Password", type="password", value=config.get('smtp_password', '') if config else "")
+        from_email = st.text_input("From Email", value=config['from_email'] if config else "")
+        use_tls = st.checkbox("Use TLS", value=config.get('use_tls', 1) if config else True)
+
+        if st.form_submit_button("Save Configuration"):
+            save_email_config(st.session_state.user_id, smtp_server, smtp_port,
+                              smtp_username, smtp_password, from_email, use_tls)
+            st.success("Email configuration saved.")
+            st.rerun()
+
+def admin_dashboard_page():
+    st.title("Admin Dashboard")
+    if not is_admin():
+        st.error("Access denied. This page is for Owners only.")
+        return
+
+    # System stats
+    stats = get_system_stats()
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total Users", stats['users'])
+    col2.metric("Total Businesses", stats['businesses'])
+    col3.metric("Total Transactions", stats['transactions'])
+    col4.metric("Total Products", stats['products'])
+
+    st.divider()
+    st.subheader("User Management")
+
+    users_df = get_all_users_with_stats()
+    if users_df.empty:
+        st.info("No users found.")
+        return
+
+    # Display users table with delete buttons
+    for idx, row in users_df.iterrows():
+        cols = st.columns([2,2,1,1,1,1])
+        cols[0].write(f"**{row['username']}**")
+        cols[1].write(row['email'])
+        cols[2].write(row['role'])
+        cols[3].write(f"Biz: {int(row['business_count'])}")
+        cols[4].write(f"Tx: {int(row['transaction_count'])}")
+        if row['id'] != st.session_state.user_id:  # Don't allow self-delete
+            if cols[5].button("Delete", key=f"del_user_{row['id']}"):
+                if st.checkbox(f"Confirm delete user {row['username']}? This action is irreversible.", key=f"confirm_{row['id']}"):
+                    delete_user(row['id'])
+                    st.success(f"User {row['username']} deleted.")
+                    st.rerun()
+        else:
+            cols[5].write("(You)")
+
+    st.divider()
+    st.subheader("Email Configuration (Global)")
+    # Allow admin to set their own email config (or global if we want)
+    # For simplicity, we reuse the email_config_page content here
+    with st.expander("Set Your Email Settings"):
+        config = get_email_config(st.session_state.user_id)
+        with st.form("admin_email_form"):
+            smtp_server = st.text_input("SMTP Server", value=config['smtp_server'] if config else "smtp.gmail.com")
+            smtp_port = st.number_input("SMTP Port", value=config['smtp_port'] if config else 587, step=1)
+            smtp_username = st.text_input("SMTP Username", value=config['smtp_username'] if config else "")
+            smtp_password = st.text_input("SMTP Password", type="password", value=config.get('smtp_password', '') if config else "")
+            from_email = st.text_input("From Email", value=config['from_email'] if config else "")
+            use_tls = st.checkbox("Use TLS", value=config.get('use_tls', 1) if config else True)
+            if st.form_submit_button("Save"):
+                save_email_config(st.session_state.user_id, smtp_server, smtp_port,
+                                  smtp_username, smtp_password, from_email, use_tls)
+                st.success("Saved.")
+                st.rerun()
+
+# -----------------------------------------------------------------------------
+# Sidebar & Routing (updated with new pages)
 # -----------------------------------------------------------------------------
 def render_sidebar():
     with st.sidebar:
@@ -1503,6 +1934,15 @@ def render_sidebar():
             with cols[0]: st.button("Margins", use_container_width=True, on_click=change_page, args=("Profit Margins",))
             with cols[1]: st.button("Categories", use_container_width=True, on_click=change_page, args=("Expense Categories",))
             st.divider()
+            # Milestone 4 – Reports & Admin
+            st.subheader("Reports & Admin")
+            cols = st.columns(2)
+            with cols[0]: st.button("Generate Report", use_container_width=True, on_click=change_page, args=("Generate Report",))
+            with cols[1]: st.button("Email Settings", use_container_width=True, on_click=change_page, args=("Email Config",))
+            if is_admin():
+                cols = st.columns(2)
+                with cols[0]: st.button("Admin Dashboard", use_container_width=True, on_click=change_page, args=("Admin Dashboard",))
+            st.divider()
             # Data & Profile
             st.subheader("Data")
             cols = st.columns(2)
@@ -1522,10 +1962,10 @@ def main():
     st.set_page_config(layout="wide", page_title="Business Analyzer")
     apply_custom_css()
     init_user_db()
-    init_business_db()
-    init_inventory_tables()
+    init_business_db()  # this now creates all tables including email_config and admin_logs
     init_session_state()
     render_sidebar()
+
     page = st.session_state.page
     logged = st.session_state.logged_in
 
@@ -1548,6 +1988,10 @@ def main():
     elif page == "Profit Margins" and logged: profit_margins_page()
     elif page == "Expense Categories" and logged: expense_categories_page()
     elif page == "Forecasting" and logged: forecasting_page()
+    # Milestone 4 pages
+    elif page == "Generate Report" and logged: report_generation_page()
+    elif page == "Email Config" and logged: email_config_page()
+    elif page == "Admin Dashboard" and logged: admin_dashboard_page()
     else:
         st.session_state.page = "Home" if not logged else "Dashboard"
         st.rerun()
