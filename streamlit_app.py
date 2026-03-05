@@ -99,6 +99,14 @@ def apply_custom_css():
         [data-testid="stMetricDelta"] {
             font-size: 0.9rem;
         }
+        /* Metric cards */
+        div[data-testid="stMetric"] {
+            background-color: #ffffff;
+            border-radius: 12px;
+            padding: 1rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border: 1px solid #e9ecef;
+        }
         /* DataFrames */
         .stDataFrame {
             border: 1px solid #e9ecef;
@@ -143,6 +151,18 @@ def apply_custom_css():
         /* Tooltips */
         .stTooltipIcon {
             color: #1E3A5F;
+        }
+        /* Cards for admin stats */
+        .admin-card {
+            background: white;
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            border: 1px solid #eef2f6;
+            transition: all 0.2s;
+        }
+        .admin-card:hover {
+            box-shadow: 0 8px 30px rgba(0,0,0,0.12);
         }
         </style>
     """, unsafe_allow_html=True)
@@ -221,7 +241,9 @@ def init_business_db():
         )''')
         conn.execute('''CREATE TABLE IF NOT EXISTS user_preferences (
             user_id INTEGER PRIMARY KEY,
-            active_business_id INTEGER
+            active_business_id INTEGER,
+            currency_symbol TEXT DEFAULT '₹',
+            default_reorder_level REAL DEFAULT 5.0
         )''')
         conn.execute('''CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -266,6 +288,15 @@ def init_business_db():
             target_user_id INTEGER,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''')
+        # Ensure user_preferences has currency_symbol and default_reorder_level columns (for older dbs)
+        try:
+            conn.execute("ALTER TABLE user_preferences ADD COLUMN currency_symbol TEXT DEFAULT '₹'")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE user_preferences ADD COLUMN default_reorder_level REAL DEFAULT 5.0")
+        except sqlite3.OperationalError:
+            pass
 
 # -----------------------------------------------------------------------------
 # Authentication Helpers
@@ -323,17 +354,24 @@ def login_user(username, password):
             st.session_state.role = user['role']
             with get_business_db() as b_conn:
                 pref = b_conn.execute(
-                    "SELECT active_business_id FROM user_preferences WHERE user_id = ?",
+                    "SELECT active_business_id, currency_symbol, default_reorder_level FROM user_preferences WHERE user_id = ?",
                     (user['id'],)
                 ).fetchone()
                 if pref:
                     st.session_state.active_business_id = pref['active_business_id']
+                    st.session_state.currency_symbol = pref['currency_symbol']
+                    st.session_state.default_reorder_level = pref['default_reorder_level']
+                else:
+                    # Insert default preferences
+                    b_conn.execute("INSERT INTO user_preferences (user_id, currency_symbol, default_reorder_level) VALUES (?, '₹', 5.0)", (user['id'],))
+                    st.session_state.currency_symbol = '₹'
+                    st.session_state.default_reorder_level = 5.0
             st.session_state.page = "Dashboard"
             return True, "Login successful!"
     return False, "Invalid username or password!"
 
 def logout_user():
-    for key in ['token', 'logged_in', 'username', 'user_id', 'role', 'uploaded_df', 'active_business_id']:
+    for key in ['token', 'logged_in', 'username', 'user_id', 'role', 'uploaded_df', 'active_business_id', 'currency_symbol', 'default_reorder_level']:
         st.session_state[key] = None
     st.session_state.page = "Home"
 
@@ -591,7 +629,7 @@ def get_sales_by_category(user_id, business_id, period):
         return pd.read_sql(q, conn, params=params)
 
 # -----------------------------------------------------------------------------
-# Milestone 4 – Report Generation Functions (FIXED)
+# Milestone 4 – Report Generation Functions (FIXED PDF)
 # -----------------------------------------------------------------------------
 def get_report_data(user_id, business_id, start_date, end_date):
     with get_business_db() as conn:
@@ -653,7 +691,7 @@ class PDF(FPDF):
         self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
 def generate_pdf_report(data_dict, start_date, end_date):
-    """Generate PDF and return as bytes using BytesIO."""
+    """Generate PDF and return as bytes, handling fpdf output type."""
     pdf = PDF()
     pdf.add_page()
     pdf.set_font('Arial', 'B', 10)
@@ -722,11 +760,16 @@ def generate_pdf_report(data_dict, start_date, end_date):
     else:
         pdf.cell(0, 8, "No inventory data", 0, 1)
 
-    # Return as bytes
-    return pdf.output(dest='S').encode('latin-1', errors='replace')
+    # Return as bytes – handle both str and bytearray output
+    out = pdf.output(dest='S')
+    if isinstance(out, str):
+        return out.encode('latin-1', errors='replace')
+    else:
+        # Assume bytes or bytearray
+        return bytes(out)
 
 # -----------------------------------------------------------------------------
-# Milestone 4 – Email Functions
+# Milestone 4 – Email Functions (with better error messages)
 # -----------------------------------------------------------------------------
 def save_email_config(user_id, smtp_server, smtp_port, smtp_username, smtp_password, from_email, use_tls=True):
     with get_business_db() as conn:
@@ -763,11 +806,13 @@ def send_email_report(to_email, subject, body, attachment_bytes, attachment_file
         server.send_message(msg)
         server.quit()
         return True, "Email sent successfully."
+    except smtplib.SMTPAuthenticationError as e:
+        return False, f"Authentication failed: {str(e)}. For Gmail, use an App Password (https://myaccount.google.com/apppasswords)."
     except Exception as e:
         return False, str(e)
 
 # -----------------------------------------------------------------------------
-# Milestone 4 – Admin Dashboard Functions (FIXED)
+# Milestone 4 – Admin Dashboard Functions (ENHANCED)
 # -----------------------------------------------------------------------------
 def get_system_stats():
     with get_user_db() as u_conn:
@@ -789,7 +834,6 @@ def get_all_users_with_stats():
     with get_business_db() as b_conn:
         biz_counts = pd.read_sql("SELECT user_id, COUNT(*) as business_count FROM businesses GROUP BY user_id", b_conn)
         tx_counts = pd.read_sql("SELECT user_id, COUNT(*) as transaction_count FROM transactions GROUP BY user_id", b_conn)
-    # Merge correctly: left on 'id', right on 'user_id'
     users = users.merge(biz_counts, left_on='id', right_on='user_id', how='left').drop('user_id', axis=1, errors='ignore')
     users = users.merge(tx_counts, left_on='id', right_on='user_id', how='left').drop('user_id', axis=1, errors='ignore')
     users['business_count'] = users['business_count'].fillna(0).astype(int)
@@ -805,6 +849,37 @@ def delete_user(user_id):
         b_conn.execute("DELETE FROM products WHERE user_id = ?", (user_id,))
         b_conn.execute("DELETE FROM email_config WHERE user_id = ?", (user_id,))
         b_conn.execute("DELETE FROM user_preferences WHERE user_id = ?", (user_id,))
+
+def get_daily_transaction_volume(days=30):
+    with get_business_db() as conn:
+        df = pd.read_sql(f"""
+            SELECT date(date) as day, COUNT(*) as count
+            FROM transactions
+            WHERE date >= date('now', '-{days} days')
+            GROUP BY day
+            ORDER BY day
+        """, conn)
+    return df
+
+def get_category_completeness():
+    with get_business_db() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0]
+        missing = conn.execute("SELECT COUNT(*) FROM transactions WHERE category IS NULL OR category = ''").fetchone()[0]
+    if total == 0:
+        return 0, 0
+    return total, missing
+
+def get_top_users_by_transactions(limit=5):
+    with get_business_db() as conn:
+        df = pd.read_sql("""
+            SELECT u.username, COUNT(t.id) as tx_count
+            FROM users u
+            LEFT JOIN transactions t ON u.id = t.user_id
+            GROUP BY u.id
+            ORDER BY tx_count DESC
+            LIMIT ?
+        """, conn, params=(limit,))
+    return df
 
 # -----------------------------------------------------------------------------
 # Page Functions – Milestones 1–3 (unchanged except minor fixes)
@@ -1396,7 +1471,7 @@ def inventory_management_page():
             qty = st.number_input("Initial Qty", 0.0, step=1.0)
             cost = st.number_input("Cost Price *", 0.0, step=1.0)
             price = st.number_input("Selling Price *", 0.0, step=1.0)
-            reorder = st.number_input("Reorder Level", 0.0, step=1.0, value=5.0)
+            reorder = st.number_input("Reorder Level", 0.0, step=1.0, value=st.session_state.get('default_reorder_level', 5.0))
             cat = st.selectbox("Category", ["Electronics","Clothing","Food","Furniture","Other"])
             if st.form_submit_button("Add") and name and cost>0 and price>0:
                 ok, msg = add_product(st.session_state.user_id, st.session_state.active_business_id,
@@ -1784,7 +1859,7 @@ def email_config_page():
     st.markdown("""
     Configure your SMTP settings to enable email reports.  
     **Common settings:**  
-    - Gmail: smtp.gmail.com, port 587, TLS enabled, use your full email as username and an app-specific password.  
+    - Gmail: smtp.gmail.com, port 587, TLS enabled, use your full email as username and an **App Password** (not your regular password).  
     - Outlook: smtp-mail.outlook.com, port 587, TLS enabled.  
     - Yahoo: smtp.mail.yahoo.com, port 587, TLS enabled.
     """)
@@ -1798,7 +1873,7 @@ def email_config_page():
         smtp_username = st.text_input("SMTP Username", value=config['smtp_username'] if config else "",
                                       help="Usually your full email address")
         smtp_password = st.text_input("SMTP Password", type="password", value=config.get('smtp_password', '') if config else "",
-                                      help="For Gmail, use an app-specific password")
+                                      help="For Gmail, use an App Password (https://myaccount.google.com/apppasswords)")
         from_email = st.text_input("From Email", value=config['from_email'] if config else "",
                                    help="The email address that will appear in the 'From' field")
         use_tls = st.checkbox("Use TLS", value=config.get('use_tls', 1) if config else True,
@@ -1816,64 +1891,122 @@ def admin_dashboard_page():
         st.error("Access denied. This page is for Owners only.")
         return
 
+    # System stats cards
     stats = get_system_stats()
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Users", stats['users'])
-    col2.metric("Total Businesses", stats['businesses'])
-    col3.metric("Total Transactions", stats['transactions'])
-    col4.metric("Total Products", stats['products'])
+    with col1:
+        st.markdown('<div class="admin-card">', unsafe_allow_html=True)
+        st.metric("Total Users", stats['users'])
+        st.markdown('</div>', unsafe_allow_html=True)
+    with col2:
+        st.markdown('<div class="admin-card">', unsafe_allow_html=True)
+        st.metric("Total Businesses", stats['businesses'])
+        st.markdown('</div>', unsafe_allow_html=True)
+    with col3:
+        st.markdown('<div class="admin-card">', unsafe_allow_html=True)
+        st.metric("Total Transactions", stats['transactions'])
+        st.markdown('</div>', unsafe_allow_html=True)
+    with col4:
+        st.markdown('<div class="admin-card">', unsafe_allow_html=True)
+        st.metric("Total Products", stats['products'])
+        st.markdown('</div>', unsafe_allow_html=True)
 
     st.divider()
-    st.subheader("User Management")
 
-    users_df = get_all_users_with_stats()
-    if users_df.empty:
-        st.info("No users found.")
-        return
+    # Tabs for different admin functions
+    tab1, tab2, tab3 = st.tabs(["👥 User Management", "📊 System Health", "⚙️ System Settings"])
 
-    # Display users with delete option
-    for idx, row in users_df.iterrows():
-        cols = st.columns([2,2,1,1,1,1])
-        cols[0].write(f"**{row['username']}**")
-        cols[1].write(row['email'])
-        cols[2].write(row['role'])
-        cols[3].write(f"Biz: {row['business_count']}")
-        cols[4].write(f"Tx: {row['transaction_count']}")
-        if row['id'] != st.session_state.user_id:
-            delete_key = f"del_user_{row['id']}"
-            confirm_key = f"confirm_{row['id']}"
-            if cols[5].button("Delete", key=delete_key):
-                st.session_state[f"confirm_{row['id']}"] = True
-            if st.session_state.get(confirm_key, False):
-                st.warning(f"Are you sure you want to delete user {row['username']}? This action is irreversible.")
-                col_yes, col_no = st.columns(2)
-                if col_yes.button("Yes, delete", key=f"yes_{row['id']}"):
-                    delete_user(row['id'])
-                    st.success(f"User {row['username']} deleted.")
-                    st.session_state[confirm_key] = False
-                    st.rerun()
-                if col_no.button("Cancel", key=f"no_{row['id']}"):
-                    st.session_state[confirm_key] = False
-                    st.rerun()
+    with tab1:
+        st.subheader("User Management")
+        users_df = get_all_users_with_stats()
+        if users_df.empty:
+            st.info("No users found.")
         else:
-            cols[5].write("(You)")
+            for idx, row in users_df.iterrows():
+                cols = st.columns([2,2,1,1,1,1])
+                cols[0].write(f"**{row['username']}**")
+                cols[1].write(row['email'])
+                cols[2].write(row['role'])
+                cols[3].write(f"Biz: {row['business_count']}")
+                cols[4].write(f"Tx: {row['transaction_count']}")
+                if row['id'] != st.session_state.user_id:
+                    delete_key = f"del_user_{row['id']}"
+                    confirm_key = f"confirm_{row['id']}"
+                    if cols[5].button("Delete", key=delete_key):
+                        st.session_state[confirm_key] = True
+                    if st.session_state.get(confirm_key, False):
+                        st.warning(f"Are you sure you want to delete user {row['username']}? This action is irreversible.")
+                        col_yes, col_no = st.columns(2)
+                        if col_yes.button("Yes, delete", key=f"yes_{row['id']}"):
+                            delete_user(row['id'])
+                            st.success(f"User {row['username']} deleted.")
+                            st.session_state[confirm_key] = False
+                            st.rerun()
+                        if col_no.button("Cancel", key=f"no_{row['id']}"):
+                            st.session_state[confirm_key] = False
+                            st.rerun()
+                else:
+                    cols[5].write("(You)")
 
-    st.divider()
-    st.subheader("System Configuration")
-    with st.expander("Email Settings (for your account)"):
-        config = get_email_config(st.session_state.user_id)
-        with st.form("admin_email_form"):
-            smtp_server = st.text_input("SMTP Server", value=config['smtp_server'] if config else "smtp.gmail.com")
-            smtp_port = st.number_input("SMTP Port", value=config['smtp_port'] if config else 587, step=1)
-            smtp_username = st.text_input("SMTP Username", value=config['smtp_username'] if config else "")
-            smtp_password = st.text_input("SMTP Password", type="password", value=config.get('smtp_password', '') if config else "")
-            from_email = st.text_input("From Email", value=config['from_email'] if config else "")
-            use_tls = st.checkbox("Use TLS", value=config.get('use_tls', 1) if config else True)
-            if st.form_submit_button("Save"):
-                save_email_config(st.session_state.user_id, smtp_server, smtp_port,
-                                  smtp_username, smtp_password, from_email, use_tls)
-                st.success("Saved.")
+    with tab2:
+        st.subheader("System Health & Data Quality")
+
+        # Daily transaction volume chart
+        daily_df = get_daily_transaction_volume(30)
+        if not daily_df.empty:
+            fig = px.bar(daily_df, x='day', y='count', title="Daily Transaction Volume (Last 30 Days)",
+                         labels={'day': 'Date', 'count': 'Transactions'})
+            st.plotly_chart(fig, use_container_width=True)
+
+        # Data quality metrics
+        total_tx, missing_cat = get_category_completeness()
+        if total_tx > 0:
+            completeness = ((total_tx - missing_cat) / total_tx) * 100
+            st.metric("Category Completeness", f"{completeness:.1f}%", f"{missing_cat} missing")
+        else:
+            st.info("No transaction data yet.")
+
+        # Top users by transactions
+        top_users = get_top_users_by_transactions()
+        if not top_users.empty:
+            fig = px.bar(top_users, x='username', y='tx_count', title="Top Users by Transactions",
+                         labels={'username': 'User', 'tx_count': 'Transactions'})
+            st.plotly_chart(fig, use_container_width=True)
+
+    with tab3:
+        st.subheader("System Settings")
+
+        # Currency symbol setting (global for admin's own account, could be extended)
+        with st.form("system_settings_form"):
+            currency = st.text_input("Currency Symbol", value=st.session_state.get('currency_symbol', '₹'),
+                                     help="Symbol used for monetary values (e.g., ₹, $, €)")
+            default_reorder = st.number_input("Default Reorder Level", value=st.session_state.get('default_reorder_level', 5.0),
+                                              step=0.5, help="Default reorder threshold for new products")
+            if st.form_submit_button("Save Settings"):
+                with get_business_db() as conn:
+                    conn.execute("UPDATE user_preferences SET currency_symbol = ?, default_reorder_level = ? WHERE user_id = ?",
+                                 (currency, default_reorder, st.session_state.user_id))
+                st.session_state.currency_symbol = currency
+                st.session_state.default_reorder_level = default_reorder
+                st.success("Settings saved.")
                 st.rerun()
+
+        st.divider()
+        st.subheader("Email Configuration (for your account)")
+        with st.expander("Configure Email"):
+            config = get_email_config(st.session_state.user_id)
+            with st.form("admin_email_form"):
+                smtp_server = st.text_input("SMTP Server", value=config['smtp_server'] if config else "smtp.gmail.com")
+                smtp_port = st.number_input("SMTP Port", value=config['smtp_port'] if config else 587, step=1)
+                smtp_username = st.text_input("SMTP Username", value=config['smtp_username'] if config else "")
+                smtp_password = st.text_input("SMTP Password", type="password", value=config.get('smtp_password', '') if config else "")
+                from_email = st.text_input("From Email", value=config['from_email'] if config else "")
+                use_tls = st.checkbox("Use TLS", value=config.get('use_tls', 1) if config else True)
+                if st.form_submit_button("Save Email Settings"):
+                    save_email_config(st.session_state.user_id, smtp_server, smtp_port,
+                                      smtp_username, smtp_password, from_email, use_tls)
+                    st.success("Email settings saved.")
+                    st.rerun()
 
 # -----------------------------------------------------------------------------
 # Sidebar & Routing (updated with new pages)
