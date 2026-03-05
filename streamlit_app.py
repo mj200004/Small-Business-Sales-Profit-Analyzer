@@ -59,7 +59,7 @@ JWT_ALGORITHM = 'HS256'
 def apply_custom_css():
     st.markdown("""
         <style>
-        /* Global styles */
+        /* Import Inter font */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         html, body, [class*="css"]  {
             font-family: 'Inter', sans-serif;
@@ -175,10 +175,21 @@ def apply_custom_css():
             box-shadow: 0 15px 35px rgba(0,0,0,0.05);
             border: 1px solid rgba(255,255,255,0.6);
             transition: all 0.3s ease;
+            text-align: center;
         }
         .admin-card:hover {
             transform: translateY(-5px);
             box-shadow: 0 25px 45px rgba(0,0,0,0.1);
+        }
+        .admin-card h3 {
+            margin-top: 0;
+            color: #1E3A5F;
+            font-size: 1.2rem;
+        }
+        .admin-card .value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #1E3A5F;
         }
 
         /* Plotly charts background */
@@ -188,6 +199,17 @@ def apply_custom_css():
             border-radius: 20px;
             padding: 10px;
             box-shadow: 0 8px 30px rgba(0,0,0,0.03);
+        }
+
+        /* Form labels */
+        .stTextInput label, .stNumberInput label, .stSelectbox label, .stDateInput label {
+            font-weight: 500;
+            color: #1E3A5F;
+        }
+
+        /* Success/Warning/Info boxes */
+        .stAlert {
+            border-radius: 12px;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -230,7 +252,7 @@ def get_business_db():
         conn.close()
 
 # -----------------------------------------------------------------------------
-# Database Initialization (including new tables)
+# Database Initialization (including all tables)
 # -----------------------------------------------------------------------------
 def init_user_db():
     with get_user_db() as conn:
@@ -324,7 +346,7 @@ def init_business_db():
             pass
 
 # -----------------------------------------------------------------------------
-# Authentication (unchanged)
+# Authentication
 # -----------------------------------------------------------------------------
 def hash_password(password):
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
@@ -356,7 +378,9 @@ def init_session_state():
         'role': None,
         'page': "Home",
         'uploaded_df': None,
-        'active_business_id': None
+        'active_business_id': None,
+        'currency_symbol': '₹',
+        'default_reorder_level': 5.0
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -415,7 +439,7 @@ def is_admin():
     return st.session_state.role == 'Owner'
 
 # -----------------------------------------------------------------------------
-# Profit & Inventory functions (unchanged from previous working version)
+# Profit & Inventory functions (unchanged)
 # -----------------------------------------------------------------------------
 def calculate_profit_metrics(user_id, business_id, period='monthly'):
     with get_business_db() as conn:
@@ -552,7 +576,7 @@ def get_inventory_value(user_id, business_id):
     return {k: res[k] or 0 for k in ['product_count', 'total_units', 'total_value']}
 
 # -----------------------------------------------------------------------------
-# Advanced Analytics (unchanged)
+# Advanced Analytics
 # -----------------------------------------------------------------------------
 def prepare_time_series(user_id, business_id, value_type='sales', freq='M'):
     with get_business_db() as conn:
@@ -644,7 +668,7 @@ def get_sales_by_category(user_id, business_id, period):
         return pd.read_sql(q, conn, params=params)
 
 # -----------------------------------------------------------------------------
-# Report Generation (FIXED PDF)
+# Report Generation
 # -----------------------------------------------------------------------------
 def get_report_data(user_id, business_id, start_date, end_date):
     with get_business_db() as conn:
@@ -774,7 +798,7 @@ def generate_pdf_report(data_dict, start_date, end_date):
     else:
         pdf.cell(0, 8, "No inventory data", 0, 1)
 
-    # Return as bytes (handle str/bytes)
+    # Return as bytes
     out = pdf.output(dest='S')
     if isinstance(out, str):
         return out.encode('latin-1', errors='replace')
@@ -782,7 +806,7 @@ def generate_pdf_report(data_dict, start_date, end_date):
         return bytes(out)
 
 # -----------------------------------------------------------------------------
-# Email Functions (with better Gmail guidance)
+# Email Functions
 # -----------------------------------------------------------------------------
 def save_email_config(user_id, smtp_server, smtp_port, smtp_username, smtp_password, from_email, use_tls=True):
     with get_business_db() as conn:
@@ -825,7 +849,7 @@ def send_email_report(to_email, subject, body, attachment_bytes, attachment_file
         return False, str(e)
 
 # -----------------------------------------------------------------------------
-# Admin Functions (FIXED cross-database query)
+# Admin Functions
 # -----------------------------------------------------------------------------
 def get_system_stats():
     with get_user_db() as u_conn:
@@ -842,14 +866,11 @@ def get_system_stats():
     }
 
 def get_all_users_with_stats():
-    # Get users from USER.db
     with get_user_db() as u_conn:
         users = pd.read_sql("SELECT id, username, email, role, created_at FROM users", u_conn)
-    # Get counts from BUSINESS.db
     with get_business_db() as b_conn:
         biz_counts = pd.read_sql("SELECT user_id, COUNT(*) as business_count FROM businesses GROUP BY user_id", b_conn)
         tx_counts = pd.read_sql("SELECT user_id, COUNT(*) as transaction_count FROM transactions GROUP BY user_id", b_conn)
-    # Merge on user_id
     users = users.merge(biz_counts, left_on='id', right_on='user_id', how='left').drop('user_id', axis=1, errors='ignore')
     users = users.merge(tx_counts, left_on='id', right_on='user_id', how='left').drop('user_id', axis=1, errors='ignore')
     users['business_count'] = users['business_count'].fillna(0).astype(int)
@@ -886,25 +907,18 @@ def get_category_completeness():
     return total, missing
 
 def get_top_users_by_transactions(limit=5):
-    # Get all users from USER.db
     with get_user_db() as u_conn:
         users = pd.read_sql("SELECT id, username FROM users", u_conn)
-    # Get transaction counts from BUSINESS.db
     with get_business_db() as b_conn:
         tx_counts = pd.read_sql("SELECT user_id, COUNT(*) as tx_count FROM transactions GROUP BY user_id", b_conn)
-    # Merge
     merged = users.merge(tx_counts, left_on='id', right_on='user_id', how='left')
     merged['tx_count'] = merged['tx_count'].fillna(0).astype(int)
     merged = merged.sort_values('tx_count', ascending=False).head(limit)
     return merged[['username', 'tx_count']]
 
 # -----------------------------------------------------------------------------
-# Page Functions – Milestones 1–3 (unchanged, but we need them all)
-# For brevity, I'll include only the ones that are called; they are identical to previous working versions.
-# However, in a real answer we must include all page functions.
-# I'll provide the full code with all page functions.
+# Page Functions (all Milestones)
 # -----------------------------------------------------------------------------
-
 def home_page():
     st.title("Business Analyzer")
     st.markdown("""
@@ -983,8 +997,8 @@ def dashboard_page():
     profit = sales - exp
     col1, col2, col3 = st.columns(3)
     col1.metric("Transactions", cnt)
-    col2.metric("Total Sales", f"{st.session_state.get('currency_symbol','₹')}{sales:,.2f}")
-    col3.metric("Net Profit", f"{st.session_state.get('currency_symbol','₹')}{profit:,.2f}")
+    col2.metric("Total Sales", f"{st.session_state.currency_symbol}{sales:,.2f}")
+    col3.metric("Net Profit", f"{st.session_state.currency_symbol}{profit:,.2f}")
     if cnt == 0:
         st.info("No transactions yet. Use 'Add Transaction' or 'Import CSV'.")
 
@@ -1079,7 +1093,7 @@ def add_transaction_page():
         return
     with st.form("transaction_form"):
         typ = st.selectbox("Type", ["Sales", "Expense"])
-        amt = st.number_input(f"Amount ({st.session_state.get('currency_symbol','₹')})", min_value=0.01, step=10.0)
+        amt = st.number_input(f"Amount ({st.session_state.currency_symbol})", min_value=0.01, step=10.0)
         cat = st.text_input("Category")
         desc = st.text_area("Description")
         tdate = st.date_input("Date", datetime.now().date())
@@ -1112,7 +1126,7 @@ def view_transactions_page():
         column_config={
             "id": st.column_config.NumberColumn("ID", disabled=True),
             "type": st.column_config.SelectboxColumn("Type", options=["Sales","Expense"], required=True),
-            "amount": st.column_config.NumberColumn("Amount", min_value=0.01, format=f"{st.session_state.get('currency_symbol','₹')}%.2f", required=True),
+            "amount": st.column_config.NumberColumn("Amount", min_value=0.01, format=f"{st.session_state.currency_symbol}%.2f", required=True),
             "category": st.column_config.TextColumn("Category"),
             "description": st.column_config.TextColumn("Description"),
             "date": st.column_config.DatetimeColumn("Date", disabled=True),
@@ -1265,10 +1279,10 @@ def sales_dashboard_page():
     profit = total_sales - total_exp
     avg = sales['amount'].mean() if not sales.empty else 0
     cols = st.columns(4)
-    cols[0].metric("Total Sales", f"{st.session_state.get('currency_symbol','₹')}{total_sales:,.2f}")
-    cols[1].metric("Total Expenses", f"{st.session_state.get('currency_symbol','₹')}{total_exp:,.2f}")
-    cols[2].metric("Net Profit", f"{st.session_state.get('currency_symbol','₹')}{profit:,.2f}")
-    cols[3].metric("Avg Sale", f"{st.session_state.get('currency_symbol','₹')}{avg:,.2f}")
+    cols[0].metric("Total Sales", f"{st.session_state.currency_symbol}{total_sales:,.2f}")
+    cols[1].metric("Total Expenses", f"{st.session_state.currency_symbol}{total_exp:,.2f}")
+    cols[2].metric("Net Profit", f"{st.session_state.currency_symbol}{profit:,.2f}")
+    cols[3].metric("Avg Sale", f"{st.session_state.currency_symbol}{avg:,.2f}")
 
 def analyze_data_page():
     st.title("Analyze File")
@@ -1417,13 +1431,13 @@ def profit_dashboard_page():
         st.info("No data")
         return
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Gross Profit", f"{st.session_state.get('currency_symbol','₹')}{m['gross_profit']:,.2f}", f"{m['gross_margin']:.1f}%")
-    col2.metric("Net Profit", f"{st.session_state.get('currency_symbol','₹')}{m['net_profit']:,.2f}", f"{m['net_margin']:.1f}%")
-    col3.metric("Revenue", f"{st.session_state.get('currency_symbol','₹')}{m['total_revenue']:,.2f}")
-    col4.metric("COGS", f"{st.session_state.get('currency_symbol','₹')}{m['total_cogs']:,.2f}")
+    col1.metric("Gross Profit", f"{st.session_state.currency_symbol}{m['gross_profit']:,.2f}", f"{m['gross_margin']:.1f}%")
+    col2.metric("Net Profit", f"{st.session_state.currency_symbol}{m['net_profit']:,.2f}", f"{m['net_margin']:.1f}%")
+    col3.metric("Revenue", f"{st.session_state.currency_symbol}{m['total_revenue']:,.2f}")
+    col4.metric("COGS", f"{st.session_state.currency_symbol}{m['total_cogs']:,.2f}")
     st.divider()
     c1, c2 = st.columns(2)
-    c1.metric("This Month Profit", f"{st.session_state.get('currency_symbol','₹')}{m['period_profit']:,.2f}", f"{st.session_state.get('currency_symbol','₹')}{m['period_sales']:,.2f} revenue")
+    c1.metric("This Month Profit", f"{st.session_state.currency_symbol}{m['period_profit']:,.2f}", f"{st.session_state.currency_symbol}{m['period_sales']:,.2f} revenue")
 
     fig = go.Figure(data=[
         go.Bar(name='Revenue', x=['Current'], y=[m['period_sales']],
@@ -1465,7 +1479,7 @@ def inventory_management_page():
     col1, col2, col3 = st.columns(3)
     col1.metric("Products", inv['product_count'])
     col2.metric("Total Units", f"{inv['total_units']:,.0f}")
-    col3.metric("Inventory Value", f"{st.session_state.get('currency_symbol','₹')}{inv['total_value']:,.2f}")
+    col3.metric("Inventory Value", f"{st.session_state.currency_symbol}{inv['total_value']:,.2f}")
 
     low = get_low_stock_items(st.session_state.user_id, st.session_state.active_business_id)
     if not low.empty:
@@ -1481,9 +1495,9 @@ def inventory_management_page():
         if prods.empty:
             st.info("No products")
         else:
-            prods['cost_price'] = prods['cost_price'].apply(lambda x: f"{st.session_state.get('currency_symbol','₹')}{x:,.2f}")
-            prods['selling_price'] = prods['selling_price'].apply(lambda x: f"{st.session_state.get('currency_symbol','₹')}{x:,.2f}")
-            prods['stock_value'] = prods['stock_value'].apply(lambda x: f"{st.session_state.get('currency_symbol','₹')}{x:,.2f}")
+            prods['cost_price'] = prods['cost_price'].apply(lambda x: f"{st.session_state.currency_symbol}{x:,.2f}")
+            prods['selling_price'] = prods['selling_price'].apply(lambda x: f"{st.session_state.currency_symbol}{x:,.2f}")
+            prods['stock_value'] = prods['stock_value'].apply(lambda x: f"{st.session_state.currency_symbol}{x:,.2f}")
             st.dataframe(prods)
     with tabs[1]:
         with st.form("add_product"):
@@ -1492,7 +1506,7 @@ def inventory_management_page():
             qty = st.number_input("Initial Qty", 0.0, step=1.0)
             cost = st.number_input("Cost Price *", 0.0, step=1.0)
             price = st.number_input("Selling Price *", 0.0, step=1.0)
-            reorder = st.number_input("Reorder Level", 0.0, step=1.0, value=st.session_state.get('default_reorder_level', 5.0))
+            reorder = st.number_input("Reorder Level", 0.0, step=1.0, value=st.session_state.default_reorder_level)
             cat = st.selectbox("Category", ["Electronics","Clothing","Food","Furniture","Other"])
             if st.form_submit_button("Add") and name and cost>0 and price>0:
                 ok, msg = add_product(st.session_state.user_id, st.session_state.active_business_id,
@@ -1538,7 +1552,7 @@ def inventory_management_page():
         else:
             hist['movement_date'] = pd.to_datetime(hist['movement_date']).dt.strftime('%Y-%m-%d %H:%M')
             for c in ['unit_cost','unit_price']:
-                hist[c] = hist[c].apply(lambda x: f"{st.session_state.get('currency_symbol','₹')}{x:,.2f}" if x else '-')
+                hist[c] = hist[c].apply(lambda x: f"{st.session_state.currency_symbol}{x:,.2f}" if x else '-')
             st.dataframe(hist)
 
 def cogs_analysis_page():
@@ -1568,9 +1582,9 @@ def cogs_analysis_page():
     tot_profit = tot_rev - tot_cogs
     avg_margin = (tot_profit/tot_rev*100) if tot_rev else 0
     cols = st.columns(4)
-    cols[0].metric("Total Revenue", f"{st.session_state.get('currency_symbol','₹')}{tot_rev:,.2f}")
-    cols[1].metric("Total COGS", f"{st.session_state.get('currency_symbol','₹')}{tot_cogs:,.2f}")
-    cols[2].metric("Gross Profit", f"{st.session_state.get('currency_symbol','₹')}{tot_profit:,.2f}")
+    cols[0].metric("Total Revenue", f"{st.session_state.currency_symbol}{tot_rev:,.2f}")
+    cols[1].metric("Total COGS", f"{st.session_state.currency_symbol}{tot_cogs:,.2f}")
+    cols[2].metric("Gross Profit", f"{st.session_state.currency_symbol}{tot_profit:,.2f}")
     cols[3].metric("Avg Margin", f"{avg_margin:.1f}%")
 
     fig = go.Figure()
@@ -1582,7 +1596,7 @@ def cogs_analysis_page():
                               yaxis='y2', line=dict(color='#ff7f0e', width=3),
                               mode='lines+markers'))
     fig.update_layout(
-        yaxis=dict(title='Amount (₹)', side='left'),
+        yaxis=dict(title='Amount', side='left'),
         yaxis2=dict(title='Margin %', overlaying='y', side='right', range=[0, 100]),
         hovermode='x unified',
         barmode='group'
@@ -1613,8 +1627,8 @@ def sales_trends_page():
     fig.update_xaxes(tickformat='%b %d, %Y' if period=='Daily' else '%b %Y')
     st.plotly_chart(fig, use_container_width=True)
     cols = st.columns(3)
-    cols[0].metric("Total", f"{st.session_state.get('currency_symbol','₹')}{grouped['amount'].sum():,.2f}")
-    cols[1].metric("Avg/period", f"{st.session_state.get('currency_symbol','₹')}{grouped['amount'].mean():,.2f}")
+    cols[0].metric("Total", f"{st.session_state.currency_symbol}{grouped['amount'].sum():,.2f}")
+    cols[1].metric("Avg/period", f"{st.session_state.currency_symbol}{grouped['amount'].mean():,.2f}")
     cols[2].metric("Periods", len(grouped))
 
 def profit_margins_page():
@@ -1650,7 +1664,7 @@ def profit_margins_page():
                               yaxis='y2', line=dict(color='#ff7f0e', width=3),
                               mode='lines+markers'))
     fig.update_layout(
-        yaxis=dict(title='Amount (₹)', side='left'),
+        yaxis=dict(title='Amount', side='left'),
         yaxis2=dict(title='Margin %', overlaying='y', side='right', range=[0, 100]),
         hovermode='x unified',
         barmode='group',
@@ -1660,7 +1674,7 @@ def profit_margins_page():
     st.plotly_chart(fig, use_container_width=True)
 
     cols = st.columns(3)
-    cols[0].metric("Total Profit", f"{st.session_state.get('currency_symbol','₹')}{res['Profit'].sum():,.2f}")
+    cols[0].metric("Total Profit", f"{st.session_state.currency_symbol}{res['Profit'].sum():,.2f}")
     cols[1].metric("Avg Margin", f"{res['Margin'].mean():.1f}%")
     cols[2].metric("Best Margin", f"{res['Margin'].max():.1f}%")
 
@@ -1680,7 +1694,7 @@ def expense_categories_page():
         fig_exp = px.pie(df_exp, values='total', names='category',
                          title=f"Expenses {period}", color_discrete_sequence=colors)
         st.plotly_chart(fig_exp, use_container_width=True)
-        df_exp['total'] = df_exp['total'].apply(lambda x: f"{st.session_state.get('currency_symbol','₹')}{x:,.2f}")
+        df_exp['total'] = df_exp['total'].apply(lambda x: f"{st.session_state.currency_symbol}{x:,.2f}")
         st.dataframe(df_exp)
 
     st.divider()
@@ -1694,7 +1708,7 @@ def expense_categories_page():
                            title=f"Sales {period}", color='category',
                            color_discrete_sequence=colors)
         st.plotly_chart(fig_sales, use_container_width=True)
-        df_sales['total'] = df_sales['total'].apply(lambda x: f"{st.session_state.get('currency_symbol','₹')}{x:,.2f}")
+        df_sales['total'] = df_sales['total'].apply(lambda x: f"{st.session_state.currency_symbol}{x:,.2f}")
         st.dataframe(df_sales)
 
 def forecasting_page():
@@ -1783,20 +1797,20 @@ def forecasting_page():
                                   line=dict(width=0), name='Confidence Interval'))
         fmt = '%b %d' if freq=='D' else ('%b %d, %Y' if freq=='W' else '%b %Y')
         fig.update_layout(title=f"{target} Forecast ({freq_opt})",
-                          xaxis_title="Date", yaxis_title="Amount (₹)",
+                          xaxis_title="Date", yaxis_title=f"Amount ({st.session_state.currency_symbol})",
                           hovermode='x unified', xaxis=dict(tickformat=fmt))
         st.plotly_chart(fig, use_container_width=True)
         if not fc.empty:
-            st.metric(f"Next {unit.capitalize()} Prediction", f"{st.session_state.get('currency_symbol','₹')}{fc.iloc[0]['yhat']:,.2f}")
+            st.metric(f"Next {unit.capitalize()} Prediction", f"{st.session_state.currency_symbol}{fc.iloc[0]['yhat']:,.2f}")
         with st.expander("Forecast Table"):
             disp = fc[['ds','yhat','yhat_lower','yhat_upper']].copy()
             disp['ds'] = disp['ds'].dt.strftime('%Y-%m-%d' if freq in ('D','W') else '%Y-%m')
             for c in ['yhat','yhat_lower','yhat_upper']:
-                disp[c] = disp[c].apply(lambda x: f"{st.session_state.get('currency_symbol','₹')}{x:,.2f}")
+                disp[c] = disp[c].apply(lambda x: f"{st.session_state.currency_symbol}{x:,.2f}")
             st.dataframe(disp)
 
 # -----------------------------------------------------------------------------
-# Milestone 4 Pages
+# Milestone 4 Pages (ENHANCED)
 # -----------------------------------------------------------------------------
 def report_generation_page():
     st.title("Generate Report")
@@ -1819,9 +1833,9 @@ def report_generation_page():
             email_to = st.text_input("Recipient Email")
             config = get_email_config(st.session_state.user_id)
             if config:
-                st.info("Email settings loaded from your profile.")
+                st.info("✅ Email settings loaded from your profile.")
             else:
-                st.warning("Please configure email settings in 'Email Settings' page.")
+                st.warning("⚠️ Please configure email settings in 'Email Settings' page.")
         else:
             email_to = None
 
@@ -1842,7 +1856,7 @@ def report_generation_page():
             if report_type == "Excel":
                 excel_bytes = generate_excel_report(data, start_date, end_date)
                 st.download_button(
-                    label="Download Excel Report",
+                    label="📥 Download Excel Report",
                     data=excel_bytes,
                     file_name=f"report_{start_date}_to_{end_date}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -1852,7 +1866,7 @@ def report_generation_page():
             else:  # PDF
                 pdf_bytes = generate_pdf_report(data, start_date, end_date)
                 st.download_button(
-                    label="Download PDF Report",
+                    label="📥 Download PDF Report",
                     data=pdf_bytes,
                     file_name=f"report_{start_date}_to_{end_date}.pdf",
                     mime="application/pdf"
@@ -1869,9 +1883,9 @@ def report_generation_page():
                     body = f"Please find attached your business report for period {start_date} to {end_date}."
                     ok, msg = send_email_report(email_to, subject, body, attachment, filename, config)
                     if ok:
-                        st.success(msg)
+                        st.success(f"✅ {msg}")
                     else:
-                        st.error(f"Email failed: {msg}")
+                        st.error(f"❌ Email failed: {msg}")
         except Exception as e:
             st.error(f"Report generation failed: {str(e)}")
 
@@ -1880,30 +1894,33 @@ def email_config_page():
     st.markdown("""
     Configure your SMTP settings to enable email reports.  
     **Common settings:**  
-    - Gmail: smtp.gmail.com, port 587, TLS enabled, use your full email as username and an **App Password** (not your regular password).  
-    - Outlook: smtp-mail.outlook.com, port 587, TLS enabled.  
-    - Yahoo: smtp.mail.yahoo.com, port 587, TLS enabled.
+    - **Gmail**: `smtp.gmail.com`, port `587`, TLS enabled, use your full email as username and an **[App Password](https://myaccount.google.com/apppasswords)** (not your regular password).  
+    - **Outlook**: `smtp-mail.outlook.com`, port `587`, TLS enabled.  
+    - **Yahoo**: `smtp.mail.yahoo.com`, port `587`, TLS enabled.
     """)
 
     config = get_email_config(st.session_state.user_id)
     with st.form("email_config_form"):
-        smtp_server = st.text_input("SMTP Server", value=config['smtp_server'] if config else "smtp.gmail.com",
-                                    help="e.g., smtp.gmail.com")
-        smtp_port = st.number_input("SMTP Port", value=config['smtp_port'] if config else 587, step=1,
-                                    help="Usually 587 for TLS, 465 for SSL")
-        smtp_username = st.text_input("SMTP Username", value=config['smtp_username'] if config else "",
-                                      help="Usually your full email address")
-        smtp_password = st.text_input("SMTP Password", type="password", value=config.get('smtp_password', '') if config else "",
-                                      help="For Gmail, use an App Password (https://myaccount.google.com/apppasswords)")
-        from_email = st.text_input("From Email", value=config['from_email'] if config else "",
-                                   help="The email address that will appear in the 'From' field")
-        use_tls = st.checkbox("Use TLS", value=config.get('use_tls', 1) if config else True,
-                              help="Enable TLS for secure connection (recommended)")
+        col1, col2 = st.columns(2)
+        with col1:
+            smtp_server = st.text_input("SMTP Server", value=config['smtp_server'] if config else "smtp.gmail.com",
+                                        help="e.g., smtp.gmail.com")
+            smtp_username = st.text_input("SMTP Username", value=config['smtp_username'] if config else "",
+                                          help="Usually your full email address")
+            from_email = st.text_input("From Email", value=config['from_email'] if config else "",
+                                       help="The email address that will appear in the 'From' field")
+        with col2:
+            smtp_port = st.number_input("SMTP Port", value=config['smtp_port'] if config else 587, step=1,
+                                        help="Usually 587 for TLS, 465 for SSL")
+            smtp_password = st.text_input("SMTP Password", type="password", value=config.get('smtp_password', '') if config else "",
+                                          help="For Gmail, use an App Password")
+            use_tls = st.checkbox("Use TLS", value=config.get('use_tls', 1) if config else True,
+                                  help="Enable TLS for secure connection (recommended)")
 
-        if st.form_submit_button("Save Configuration"):
+        if st.form_submit_button("💾 Save Configuration", use_container_width=True):
             save_email_config(st.session_state.user_id, smtp_server, smtp_port,
                               smtp_username, smtp_password, from_email, use_tls)
-            st.success("Email configuration saved.")
+            st.success("✅ Email configuration saved.")
             st.rerun()
 
 def admin_dashboard_page():
@@ -1915,21 +1932,33 @@ def admin_dashboard_page():
     stats = get_system_stats()
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.markdown('<div class="admin-card">', unsafe_allow_html=True)
-        st.metric("Total Users", stats['users'])
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="admin-card">
+            <h3>Total Users</h3>
+            <div class="value">{stats['users']}</div>
+        </div>
+        """, unsafe_allow_html=True)
     with col2:
-        st.markdown('<div class="admin-card">', unsafe_allow_html=True)
-        st.metric("Total Businesses", stats['businesses'])
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="admin-card">
+            <h3>Total Businesses</h3>
+            <div class="value">{stats['businesses']}</div>
+        </div>
+        """, unsafe_allow_html=True)
     with col3:
-        st.markdown('<div class="admin-card">', unsafe_allow_html=True)
-        st.metric("Total Transactions", stats['transactions'])
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="admin-card">
+            <h3>Total Transactions</h3>
+            <div class="value">{stats['transactions']}</div>
+        </div>
+        """, unsafe_allow_html=True)
     with col4:
-        st.markdown('<div class="admin-card">', unsafe_allow_html=True)
-        st.metric("Total Products", stats['products'])
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="admin-card">
+            <h3>Total Products</h3>
+            <div class="value">{stats['products']}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     st.divider()
 
@@ -1951,17 +1980,17 @@ def admin_dashboard_page():
                 if row['id'] != st.session_state.user_id:
                     delete_key = f"del_user_{row['id']}"
                     confirm_key = f"confirm_{row['id']}"
-                    if cols[5].button("Delete", key=delete_key):
+                    if cols[5].button("🗑️ Delete", key=delete_key):
                         st.session_state[confirm_key] = True
                     if st.session_state.get(confirm_key, False):
                         st.warning(f"Are you sure you want to delete user {row['username']}? This action is irreversible.")
                         col_yes, col_no = st.columns(2)
-                        if col_yes.button("Yes, delete", key=f"yes_{row['id']}"):
+                        if col_yes.button("✅ Yes, delete", key=f"yes_{row['id']}"):
                             delete_user(row['id'])
                             st.success(f"User {row['username']} deleted.")
                             st.session_state[confirm_key] = False
                             st.rerun()
-                        if col_no.button("Cancel", key=f"no_{row['id']}"):
+                        if col_no.button("❌ Cancel", key=f"no_{row['id']}"):
                             st.session_state[confirm_key] = False
                             st.rerun()
                 else:
@@ -1993,34 +2022,37 @@ def admin_dashboard_page():
         st.subheader("System Settings")
 
         with st.form("system_settings_form"):
-            currency = st.text_input("Currency Symbol", value=st.session_state.get('currency_symbol', '₹'),
+            currency = st.text_input("Currency Symbol", value=st.session_state.currency_symbol,
                                      help="Symbol used for monetary values (e.g., ₹, $, €)")
-            default_reorder = st.number_input("Default Reorder Level", value=st.session_state.get('default_reorder_level', 5.0),
+            default_reorder = st.number_input("Default Reorder Level", value=st.session_state.default_reorder_level,
                                               step=0.5, help="Default reorder threshold for new products")
-            if st.form_submit_button("Save Settings"):
+            if st.form_submit_button("💾 Save Settings"):
                 with get_business_db() as conn:
                     conn.execute("UPDATE user_preferences SET currency_symbol = ?, default_reorder_level = ? WHERE user_id = ?",
                                  (currency, default_reorder, st.session_state.user_id))
                 st.session_state.currency_symbol = currency
                 st.session_state.default_reorder_level = default_reorder
-                st.success("Settings saved.")
+                st.success("✅ Settings saved.")
                 st.rerun()
 
         st.divider()
         st.subheader("Email Configuration (for your account)")
-        with st.expander("Configure Email"):
+        with st.expander("✉️ Configure Email"):
             config = get_email_config(st.session_state.user_id)
             with st.form("admin_email_form"):
-                smtp_server = st.text_input("SMTP Server", value=config['smtp_server'] if config else "smtp.gmail.com")
-                smtp_port = st.number_input("SMTP Port", value=config['smtp_port'] if config else 587, step=1)
-                smtp_username = st.text_input("SMTP Username", value=config['smtp_username'] if config else "")
-                smtp_password = st.text_input("SMTP Password", type="password", value=config.get('smtp_password', '') if config else "")
-                from_email = st.text_input("From Email", value=config['from_email'] if config else "")
-                use_tls = st.checkbox("Use TLS", value=config.get('use_tls', 1) if config else True)
-                if st.form_submit_button("Save Email Settings"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    smtp_server = st.text_input("SMTP Server", value=config['smtp_server'] if config else "smtp.gmail.com")
+                    smtp_username = st.text_input("SMTP Username", value=config['smtp_username'] if config else "")
+                    from_email = st.text_input("From Email", value=config['from_email'] if config else "")
+                with col2:
+                    smtp_port = st.number_input("SMTP Port", value=config['smtp_port'] if config else 587, step=1)
+                    smtp_password = st.text_input("SMTP Password", type="password", value=config.get('smtp_password', '') if config else "")
+                    use_tls = st.checkbox("Use TLS", value=config.get('use_tls', 1) if config else True)
+                if st.form_submit_button("💾 Save Email Settings"):
                     save_email_config(st.session_state.user_id, smtp_server, smtp_port,
                                       smtp_username, smtp_password, from_email, use_tls)
-                    st.success("Email settings saved.")
+                    st.success("✅ Email settings saved.")
                     st.rerun()
 
 # -----------------------------------------------------------------------------
@@ -2039,53 +2071,53 @@ def render_sidebar():
             # Core
             st.subheader("Core")
             cols = st.columns(2)
-            with cols[0]: st.button("Dashboard", use_container_width=True, on_click=change_page, args=("Dashboard",))
-            with cols[1]: st.button("Sales", use_container_width=True, on_click=change_page, args=("Sales Dashboard",))
+            with cols[0]: st.button("📊 Dashboard", use_container_width=True, on_click=change_page, args=("Dashboard",))
+            with cols[1]: st.button("💰 Sales", use_container_width=True, on_click=change_page, args=("Sales Dashboard",))
             cols = st.columns(2)
-            with cols[0]: st.button("Transactions", use_container_width=True, on_click=change_page, args=("View Transactions",))
-            with cols[1]: st.button("Add Tx", use_container_width=True, on_click=change_page, args=("Add Transaction",))
+            with cols[0]: st.button("📝 Transactions", use_container_width=True, on_click=change_page, args=("View Transactions",))
+            with cols[1]: st.button("➕ Add Tx", use_container_width=True, on_click=change_page, args=("Add Transaction",))
             st.divider()
             # Profit & Inventory
             st.subheader("Business Intelligence")
             cols = st.columns(2)
-            with cols[0]: st.button("Profit", use_container_width=True, on_click=change_page, args=("Profit Dashboard",))
-            with cols[1]: st.button("Inventory", use_container_width=True, on_click=change_page, args=("Inventory",))
+            with cols[0]: st.button("📈 Profit", use_container_width=True, on_click=change_page, args=("Profit Dashboard",))
+            with cols[1]: st.button("📦 Inventory", use_container_width=True, on_click=change_page, args=("Inventory",))
             cols = st.columns(2)
-            with cols[0]: st.button("COGS", use_container_width=True, on_click=change_page, args=("COGS Analysis",))
-            with cols[1]: st.button("Businesses", use_container_width=True, on_click=change_page, args=("Businesses",))
+            with cols[0]: st.button("🧾 COGS", use_container_width=True, on_click=change_page, args=("COGS Analysis",))
+            with cols[1]: st.button("🏢 Businesses", use_container_width=True, on_click=change_page, args=("Businesses",))
             st.divider()
             # Advanced Analytics
             st.subheader("Advanced")
             cols = st.columns(2)
-            with cols[0]: st.button("Trends", use_container_width=True, on_click=change_page, args=("Sales Trends",))
-            with cols[1]: st.button("Forecast", use_container_width=True, on_click=change_page, args=("Forecasting",))
+            with cols[0]: st.button("📉 Trends", use_container_width=True, on_click=change_page, args=("Sales Trends",))
+            with cols[1]: st.button("🔮 Forecast", use_container_width=True, on_click=change_page, args=("Forecasting",))
             cols = st.columns(2)
-            with cols[0]: st.button("Margins", use_container_width=True, on_click=change_page, args=("Profit Margins",))
-            with cols[1]: st.button("Categories", use_container_width=True, on_click=change_page, args=("Expense Categories",))
+            with cols[0]: st.button("📊 Margins", use_container_width=True, on_click=change_page, args=("Profit Margins",))
+            with cols[1]: st.button("📂 Categories", use_container_width=True, on_click=change_page, args=("Expense Categories",))
             st.divider()
             # Milestone 4 – Reports & Admin
             st.subheader("Reports & Admin")
             cols = st.columns(2)
-            with cols[0]: st.button("Generate Report", use_container_width=True, on_click=change_page, args=("Generate Report",))
-            with cols[1]: st.button("Email Settings", use_container_width=True, on_click=change_page, args=("Email Config",))
+            with cols[0]: st.button("📄 Generate Report", use_container_width=True, on_click=change_page, args=("Generate Report",))
+            with cols[1]: st.button("✉️ Email Settings", use_container_width=True, on_click=change_page, args=("Email Config",))
             if is_admin():
                 cols = st.columns(2)
-                with cols[0]: st.button("Admin Dashboard", use_container_width=True, on_click=change_page, args=("Admin Dashboard",))
+                with cols[0]: st.button("👑 Admin", use_container_width=True, on_click=change_page, args=("Admin Dashboard",))
             st.divider()
             # Data & Profile
             st.subheader("Data")
             cols = st.columns(2)
-            with cols[0]: st.button("Import", use_container_width=True, on_click=change_page, args=("Import Transactions",))
-            with cols[1]: st.button("Analyze", use_container_width=True, on_click=change_page, args=("Analyze Data",))
+            with cols[0]: st.button("📤 Import", use_container_width=True, on_click=change_page, args=("Import Transactions",))
+            with cols[1]: st.button("🔍 Analyze", use_container_width=True, on_click=change_page, args=("Analyze Data",))
             st.divider()
             st.subheader("Account")
             cols = st.columns(2)
-            with cols[0]: st.button("Profile", use_container_width=True, on_click=change_page, args=("Profile",))
-            with cols[1]: st.button("Logout", use_container_width=True, on_click=logout_user)
+            with cols[0]: st.button("👤 Profile", use_container_width=True, on_click=change_page, args=("Profile",))
+            with cols[1]: st.button("🚪 Logout", use_container_width=True, on_click=logout_user)
         else:
-            st.button("Home", use_container_width=True, on_click=change_page, args=("Home",))
-            st.button("Login", use_container_width=True, on_click=change_page, args=("Login",))
-            st.button("Sign Up", use_container_width=True, on_click=change_page, args=("Sign Up",))
+            st.button("🏠 Home", use_container_width=True, on_click=change_page, args=("Home",))
+            st.button("🔑 Login", use_container_width=True, on_click=change_page, args=("Login",))
+            st.button("📝 Sign Up", use_container_width=True, on_click=change_page, args=("Sign Up",))
 
 def main():
     st.set_page_config(layout="wide", page_title="Business Analyzer")
