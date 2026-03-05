@@ -54,7 +54,7 @@ SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'your-secret-key-change-in-product
 JWT_ALGORITHM = 'HS256'
 
 # -----------------------------------------------------------------------------
-# MODERN CSS with glassmorphism and animations
+# Clean and modern CSS (no emojis, professional)
 # -----------------------------------------------------------------------------
 def apply_custom_css():
     st.markdown("""
@@ -86,7 +86,7 @@ def apply_custom_css():
             padding-bottom: 0.5rem;
         }
 
-        /* Buttons with gradient and shadow */
+        /* Buttons */
         .stButton > button {
             border-radius: 12px;
             border: none;
@@ -103,7 +103,7 @@ def apply_custom_css():
             box-shadow: 0 8px 25px rgba(30,58,95,0.3);
         }
 
-        /* Metric cards with glass effect */
+        /* Metric cards */
         div[data-testid="stMetric"] {
             background: rgba(255, 255, 255, 0.6);
             backdrop-filter: blur(8px);
@@ -192,6 +192,17 @@ def apply_custom_css():
             color: #1E3A5F;
         }
 
+        /* Login page image container */
+        .login-image {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .login-image img {
+            max-width: 80%;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
         /* Plotly charts background */
         .js-plotly-plot {
             background: rgba(255,255,255,0.3);
@@ -252,7 +263,7 @@ def get_business_db():
         conn.close()
 
 # -----------------------------------------------------------------------------
-# Database Initialization (including all tables)
+# Database Initialization
 # -----------------------------------------------------------------------------
 def init_user_db():
     with get_user_db() as conn:
@@ -439,7 +450,7 @@ def is_admin():
     return st.session_state.role == 'Owner'
 
 # -----------------------------------------------------------------------------
-# Profit & Inventory functions (unchanged)
+# Profit & Inventory functions
 # -----------------------------------------------------------------------------
 def calculate_profit_metrics(user_id, business_id, period='monthly'):
     with get_business_db() as conn:
@@ -522,7 +533,7 @@ def add_product(user_id, business_id, name, sku, qty, cost, price, reorder, cate
                 """, (pid, qty, cost))
             return True, "Product added."
         except sqlite3.IntegrityError:
-            return False, "SKU already exists."
+            return False, "SKU already exists. Please use a different SKU."
         except Exception as e:
             return False, str(e)
 
@@ -544,7 +555,7 @@ def record_stock_movement(pid, move_type, qty, unit_cost=None, unit_price=None, 
                 cur.execute("UPDATE products SET quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (new_qty, pid))
         elif move_type == 'sale':
             if qty > curr_qty:
-                return False, "Insufficient stock."
+                return False, f"Insufficient stock. Available: {curr_qty}, requested: {qty}"
             new_qty = curr_qty - qty
             cur.execute("UPDATE products SET quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (new_qty, pid))
         elif move_type == 'adjustment':
@@ -917,7 +928,7 @@ def get_top_users_by_transactions(limit=5):
     return merged[['username', 'tx_count']]
 
 # -----------------------------------------------------------------------------
-# Page Functions (all Milestones)
+# Page Functions
 # -----------------------------------------------------------------------------
 def home_page():
     st.title("Business Analyzer")
@@ -937,6 +948,13 @@ def home_page():
 
 def login_page():
     st.title("Login")
+    # Display a business illustration (using a free image from Unsplash or placeholder)
+    st.markdown("""
+    <div class="login-image">
+        <img src="https://images.unsplash.com/photo-1460925895917-afdab827c52f?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80" alt="Business Dashboard">
+    </div>
+    """, unsafe_allow_html=True)
+
     with st.form("login_form"):
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
@@ -954,7 +972,10 @@ def login_page():
 def signup_page():
     st.title("Sign Up")
     with st.form("signup_form"):
-        nu, em, pw, cf = st.text_input("Username"), st.text_input("Email"), st.text_input("Password", type="password"), st.text_input("Confirm Password", type="password")
+        nu = st.text_input("Username")
+        em = st.text_input("Email")
+        pw = st.text_input("Password", type="password")
+        cf = st.text_input("Confirm Password", type="password")
         role = st.selectbox("Role", ["Owner", "Accountant", "Staff"])
         if st.form_submit_button("Sign Up", use_container_width=True):
             if not nu or not em or not pw:
@@ -1024,7 +1045,10 @@ def businesses_page():
     st.title("My Businesses")
     with st.expander("Add New Business"):
         with st.form("add_business_form"):
-            name, typ, addr, phone = st.text_input("Business Name *"), st.text_input("Type"), st.text_area("Address"), st.text_input("Phone")
+            name = st.text_input("Business Name *")
+            typ = st.text_input("Type")
+            addr = st.text_area("Address")
+            phone = st.text_input("Phone")
             if st.form_submit_button("Create", use_container_width=True) and name:
                 with get_business_db() as conn:
                     cur = conn.cursor()
@@ -1383,19 +1407,26 @@ def profile_page():
     with get_user_db() as conn:
         user = conn.execute("SELECT * FROM users WHERE id = ?", (st.session_state.user_id,)).fetchone()
     if not user:
+        st.error("User not found")
         return
+
     col1, col2 = st.columns(2)
-    col1.write(f"**Username:** {user['username']}\n**Email:** {user['email']}\n**Role:** {user['role']}")
-    if user['created_at']:
-        col2.write(f"**Member since:** {user['created_at']}")
+    with col1:
+        st.write(f"**Username:** {user['username']}")
+        st.write(f"**Email:** {user['email']}")
+        st.write(f"**Role:** {user['role']}")
+    with col2:
+        if user['created_at']:
+            st.write(f"**Member since:** {user['created_at']}")
+
     st.divider()
     with st.form("update_profile"):
         new_email = st.text_input("New Email", user['email'])
         new_pw = st.text_input("New Password", type="password")
-        confirm = st.text_input("Confirm", type="password")
-        if st.form_submit_button("Update"):
+        confirm = st.text_input("Confirm Password", type="password")
+        if st.form_submit_button("Update Profile", use_container_width=True):
             if new_pw and new_pw != confirm:
-                st.error("Passwords don't match")
+                st.error("Passwords do not match")
             else:
                 with get_user_db() as conn:
                     if new_pw:
@@ -1403,13 +1434,14 @@ def profile_page():
                         conn.execute("UPDATE users SET email=?, password=? WHERE id=?", (new_email, hashed, st.session_state.user_id))
                     else:
                         conn.execute("UPDATE users SET email=? WHERE id=?", (new_email, st.session_state.user_id))
-                st.success("Updated")
+                st.success("Profile updated successfully")
                 st.rerun()
+
     st.divider()
     with st.form("delete_account"):
-        st.warning("This is irreversible")
-        confirm = st.checkbox("I understand")
-        if st.form_submit_button("Delete Account") and confirm:
+        st.warning("Deleting your account is irreversible. All your data will be permanently removed.")
+        confirm = st.checkbox("I understand the consequences")
+        if st.form_submit_button("Delete My Account", use_container_width=True) and confirm:
             with get_business_db() as b_conn:
                 b_conn.execute("DELETE FROM transactions WHERE user_id = ?", (st.session_state.user_id,))
                 b_conn.execute("DELETE FROM businesses WHERE user_id = ?", (st.session_state.user_id,))
@@ -1419,6 +1451,7 @@ def profile_page():
             with get_user_db() as conn:
                 conn.execute("DELETE FROM users WHERE id = ?", (st.session_state.user_id,))
             logout_user()
+            st.success("Account deleted. Redirecting...")
             st.rerun()
 
 def profit_dashboard_page():
@@ -1487,7 +1520,7 @@ def inventory_management_page():
         with st.expander("View"):
             st.dataframe(low)
 
-    tabs = st.tabs(["Products","Add Product","Movement","History"])
+    tabs = st.tabs(["Products", "Add Product", "Movement", "History"])
     with tabs[0]:
         with get_business_db() as conn:
             prods = pd.read_sql("SELECT product_name, sku, quantity, cost_price, selling_price, reorder_level, category, (quantity*cost_price) as stock_value FROM products WHERE user_id=? AND business_id=? ORDER BY product_name",
@@ -1501,18 +1534,24 @@ def inventory_management_page():
             st.dataframe(prods)
     with tabs[1]:
         with st.form("add_product"):
-            name = st.text_input("Name *")
-            sku = st.text_input("SKU")
-            qty = st.number_input("Initial Qty", 0.0, step=1.0)
+            name = st.text_input("Product Name *")
+            sku = st.text_input("SKU (unique identifier)")
+            qty = st.number_input("Initial Quantity", 0.0, step=1.0)
             cost = st.number_input("Cost Price *", 0.0, step=1.0)
             price = st.number_input("Selling Price *", 0.0, step=1.0)
             reorder = st.number_input("Reorder Level", 0.0, step=1.0, value=st.session_state.default_reorder_level)
-            cat = st.selectbox("Category", ["Electronics","Clothing","Food","Furniture","Other"])
-            if st.form_submit_button("Add") and name and cost>0 and price>0:
-                ok, msg = add_product(st.session_state.user_id, st.session_state.active_business_id,
-                                      name, sku, qty, cost, price, reorder, cat)
-                st.success(msg) if ok else st.error(msg)
-                if ok: st.rerun()
+            cat = st.selectbox("Category", ["Electronics", "Clothing", "Food", "Furniture", "Other"])
+            if st.form_submit_button("Add Product", use_container_width=True):
+                if name and cost > 0 and price > 0:
+                    ok, msg = add_product(st.session_state.user_id, st.session_state.active_business_id,
+                                          name, sku, qty, cost, price, reorder, cat)
+                    if ok:
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+                else:
+                    st.error("Please fill all required fields.")
     with tabs[2]:
         with get_business_db() as conn:
             plist = pd.read_sql("SELECT id, product_name, quantity FROM products WHERE user_id=? AND business_id=?",
@@ -1525,19 +1564,25 @@ def inventory_management_page():
                                    format_func=lambda x: plist[plist['id']==x]['product_name'].iloc[0])
                 cur_qty = plist[plist['id']==pid]['quantity'].iloc[0]
                 st.info(f"Current stock: {cur_qty:,.2f}")
-                move = st.selectbox("Type", ["purchase","sale","adjustment"])
+                move = st.selectbox("Movement Type", ["purchase", "sale", "adjustment"])
                 mqty = st.number_input("Quantity", 0.0, step=1.0)
                 unit_cost = st.number_input("Unit Cost (if purchase)", 0.0, step=1.0)
                 unit_price = st.number_input("Unit Price (if sale)", 0.0, step=1.0)
-                ref = st.text_input("Reference")
+                ref = st.text_input("Reference (optional)")
                 notes = st.text_area("Notes")
-                if st.form_submit_button("Record") and mqty>0:
-                    ok, msg = record_stock_movement(pid, move, mqty,
-                                                    unit_cost or None,
-                                                    unit_price or None,
-                                                    ref or None, notes)
-                    st.success(msg) if ok else st.error(msg)
-                    if ok: st.rerun()
+                if st.form_submit_button("Record Movement", use_container_width=True):
+                    if mqty > 0:
+                        ok, msg = record_stock_movement(pid, move, mqty,
+                                                        unit_cost or None,
+                                                        unit_price or None,
+                                                        ref or None, notes)
+                        if ok:
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(msg)
+                    else:
+                        st.error("Quantity must be positive.")
     with tabs[3]:
         with get_business_db() as conn:
             hist = pd.read_sql("""
@@ -1551,7 +1596,7 @@ def inventory_management_page():
             st.info("No movements")
         else:
             hist['movement_date'] = pd.to_datetime(hist['movement_date']).dt.strftime('%Y-%m-%d %H:%M')
-            for c in ['unit_cost','unit_price']:
+            for c in ['unit_cost', 'unit_price']:
                 hist[c] = hist[c].apply(lambda x: f"{st.session_state.currency_symbol}{x:,.2f}" if x else '-')
             st.dataframe(hist)
 
@@ -1619,12 +1664,12 @@ def sales_trends_page():
         return
     df['date'] = pd.to_datetime(df['date'])
     st.info(f"Records: {len(df)} from {df['date'].min().date()} to {df['date'].max().date()}")
-    period = st.radio("View", ["Daily","Weekly","Monthly"], horizontal=True)
-    freq = {"Daily":"D","Weekly":"W","Monthly":"M"}[period]
+    period = st.radio("View", ["Daily", "Weekly", "Monthly"], horizontal=True)
+    freq = {"Daily": "D", "Weekly": "W", "Monthly": "M"}[period]
     grouped = df.set_index('date').resample(freq).sum().reset_index()
     fig = px.line(grouped, x='date', y='amount', title=f"Sales ({period})", markers=True,
                   line_shape='linear')
-    fig.update_xaxes(tickformat='%b %d, %Y' if period=='Daily' else '%b %Y')
+    fig.update_xaxes(tickformat='%b %d, %Y' if period == 'Daily' else '%b %Y')
     st.plotly_chart(fig, use_container_width=True)
     cols = st.columns(3)
     cols[0].metric("Total", f"{st.session_state.currency_symbol}{grouped['amount'].sum():,.2f}")
@@ -1683,8 +1728,8 @@ def expense_categories_page():
     if not st.session_state.active_business_id:
         st.warning("Select active business")
         return
-    period = st.selectbox("Period", ["All time","Last 30 days","Last 7 days","This year"])
-    pmap = {"All time":None, "Last 30 days":"month", "Last 7 days":"week", "This year":"year"}
+    period = st.selectbox("Period", ["All time", "Last 30 days", "Last 7 days", "This year"])
+    pmap = {"All time": None, "Last 30 days": "month", "Last 7 days": "week", "This year": "year"}
 
     df_exp = get_expense_by_category(st.session_state.user_id, st.session_state.active_business_id, pmap[period])
     if df_exp.empty:
@@ -1734,8 +1779,8 @@ def forecasting_page():
         st.warning("No sales data")
         return
 
-    freq_labels = ["Daily","Weekly","Monthly"]
-    freq_codes = ["D","W","M"]
+    freq_labels = ["Daily", "Weekly", "Monthly"]
+    freq_codes = ["D", "W", "M"]
     counts = []
     for code in freq_codes:
         ts = prepare_time_series(st.session_state.user_id, st.session_state.active_business_id, 'sales', code)
@@ -1749,7 +1794,7 @@ def forecasting_page():
             else:
                 st.error(f"**{lab}**: {cnt} X (need ≥3)")
 
-    target = st.radio("Forecast", ["Sales","Profit"], horizontal=True)
+    target = st.radio("Forecast", ["Sales", "Profit"], horizontal=True)
     freq_opt = st.selectbox("Frequency", freq_labels, index=2)
     freq = freq_codes[freq_labels.index(freq_opt)]
     if freq == 'D':
@@ -1784,7 +1829,7 @@ def forecasting_page():
             return
         hist = prepare_time_series(st.session_state.user_id, st.session_state.active_business_id,
                                    target.lower(), freq)
-        hist = hist[hist['y']>0]
+        hist = hist[hist['y'] > 0]
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=hist['ds'], y=hist['y'], mode='lines+markers',
                                   name='Historical', line=dict(color='#1f77b4', width=2)))
@@ -1795,7 +1840,7 @@ def forecasting_page():
         fig.add_trace(go.Scatter(x=fc['ds'], y=fc['yhat_lower'], mode='lines',
                                   fill='tonexty', fillcolor='rgba(255,127,14,0.2)',
                                   line=dict(width=0), name='Confidence Interval'))
-        fmt = '%b %d' if freq=='D' else ('%b %d, %Y' if freq=='W' else '%b %Y')
+        fmt = '%b %d' if freq == 'D' else ('%b %d, %Y' if freq == 'W' else '%b %Y')
         fig.update_layout(title=f"{target} Forecast ({freq_opt})",
                           xaxis_title="Date", yaxis_title=f"Amount ({st.session_state.currency_symbol})",
                           hovermode='x unified', xaxis=dict(tickformat=fmt))
@@ -1803,14 +1848,14 @@ def forecasting_page():
         if not fc.empty:
             st.metric(f"Next {unit.capitalize()} Prediction", f"{st.session_state.currency_symbol}{fc.iloc[0]['yhat']:,.2f}")
         with st.expander("Forecast Table"):
-            disp = fc[['ds','yhat','yhat_lower','yhat_upper']].copy()
-            disp['ds'] = disp['ds'].dt.strftime('%Y-%m-%d' if freq in ('D','W') else '%Y-%m')
-            for c in ['yhat','yhat_lower','yhat_upper']:
+            disp = fc[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].copy()
+            disp['ds'] = disp['ds'].dt.strftime('%Y-%m-%d' if freq in ('D', 'W') else '%Y-%m')
+            for c in ['yhat', 'yhat_lower', 'yhat_upper']:
                 disp[c] = disp[c].apply(lambda x: f"{st.session_state.currency_symbol}{x:,.2f}")
             st.dataframe(disp)
 
 # -----------------------------------------------------------------------------
-# Milestone 4 Pages (ENHANCED)
+# Milestone 4 Pages
 # -----------------------------------------------------------------------------
 def report_generation_page():
     st.title("Generate Report")
@@ -1833,9 +1878,9 @@ def report_generation_page():
             email_to = st.text_input("Recipient Email")
             config = get_email_config(st.session_state.user_id)
             if config:
-                st.info("✅ Email settings loaded from your profile.")
+                st.info("Email settings loaded from your profile.")
             else:
-                st.warning("⚠️ Please configure email settings in 'Email Settings' page.")
+                st.warning("Please configure email settings in 'Email Settings' page.")
         else:
             email_to = None
 
@@ -1856,7 +1901,7 @@ def report_generation_page():
             if report_type == "Excel":
                 excel_bytes = generate_excel_report(data, start_date, end_date)
                 st.download_button(
-                    label="📥 Download Excel Report",
+                    label="Download Excel Report",
                     data=excel_bytes,
                     file_name=f"report_{start_date}_to_{end_date}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -1866,7 +1911,7 @@ def report_generation_page():
             else:  # PDF
                 pdf_bytes = generate_pdf_report(data, start_date, end_date)
                 st.download_button(
-                    label="📥 Download PDF Report",
+                    label="Download PDF Report",
                     data=pdf_bytes,
                     file_name=f"report_{start_date}_to_{end_date}.pdf",
                     mime="application/pdf"
@@ -1883,9 +1928,9 @@ def report_generation_page():
                     body = f"Please find attached your business report for period {start_date} to {end_date}."
                     ok, msg = send_email_report(email_to, subject, body, attachment, filename, config)
                     if ok:
-                        st.success(f"✅ {msg}")
+                        st.success(msg)
                     else:
-                        st.error(f"❌ Email failed: {msg}")
+                        st.error(f"Email failed: {msg}")
         except Exception as e:
             st.error(f"Report generation failed: {str(e)}")
 
@@ -1917,10 +1962,10 @@ def email_config_page():
             use_tls = st.checkbox("Use TLS", value=config.get('use_tls', 1) if config else True,
                                   help="Enable TLS for secure connection (recommended)")
 
-        if st.form_submit_button("💾 Save Configuration", use_container_width=True):
+        if st.form_submit_button("Save Configuration", use_container_width=True):
             save_email_config(st.session_state.user_id, smtp_server, smtp_port,
                               smtp_username, smtp_password, from_email, use_tls)
-            st.success("✅ Email configuration saved.")
+            st.success("Email configuration saved.")
             st.rerun()
 
 def admin_dashboard_page():
@@ -1962,7 +2007,7 @@ def admin_dashboard_page():
 
     st.divider()
 
-    tab1, tab2, tab3 = st.tabs(["👥 User Management", "📊 System Health", "⚙️ System Settings"])
+    tab1, tab2, tab3 = st.tabs(["User Management", "System Health", "System Settings"])
 
     with tab1:
         st.subheader("User Management")
@@ -1971,7 +2016,7 @@ def admin_dashboard_page():
             st.info("No users found.")
         else:
             for idx, row in users_df.iterrows():
-                cols = st.columns([2,2,1,1,1,1])
+                cols = st.columns([2, 2, 1, 1, 1, 1])
                 cols[0].write(f"**{row['username']}**")
                 cols[1].write(row['email'])
                 cols[2].write(row['role'])
@@ -1980,17 +2025,17 @@ def admin_dashboard_page():
                 if row['id'] != st.session_state.user_id:
                     delete_key = f"del_user_{row['id']}"
                     confirm_key = f"confirm_{row['id']}"
-                    if cols[5].button("🗑️ Delete", key=delete_key):
+                    if cols[5].button("Delete", key=delete_key):
                         st.session_state[confirm_key] = True
                     if st.session_state.get(confirm_key, False):
                         st.warning(f"Are you sure you want to delete user {row['username']}? This action is irreversible.")
                         col_yes, col_no = st.columns(2)
-                        if col_yes.button("✅ Yes, delete", key=f"yes_{row['id']}"):
+                        if col_yes.button("Yes, delete", key=f"yes_{row['id']}"):
                             delete_user(row['id'])
                             st.success(f"User {row['username']} deleted.")
                             st.session_state[confirm_key] = False
                             st.rerun()
-                        if col_no.button("❌ Cancel", key=f"no_{row['id']}"):
+                        if col_no.button("Cancel", key=f"no_{row['id']}"):
                             st.session_state[confirm_key] = False
                             st.rerun()
                 else:
@@ -2026,18 +2071,18 @@ def admin_dashboard_page():
                                      help="Symbol used for monetary values (e.g., ₹, $, €)")
             default_reorder = st.number_input("Default Reorder Level", value=st.session_state.default_reorder_level,
                                               step=0.5, help="Default reorder threshold for new products")
-            if st.form_submit_button("💾 Save Settings"):
+            if st.form_submit_button("Save Settings", use_container_width=True):
                 with get_business_db() as conn:
                     conn.execute("UPDATE user_preferences SET currency_symbol = ?, default_reorder_level = ? WHERE user_id = ?",
                                  (currency, default_reorder, st.session_state.user_id))
                 st.session_state.currency_symbol = currency
                 st.session_state.default_reorder_level = default_reorder
-                st.success("✅ Settings saved.")
+                st.success("Settings saved.")
                 st.rerun()
 
         st.divider()
         st.subheader("Email Configuration (for your account)")
-        with st.expander("✉️ Configure Email"):
+        with st.expander("Configure Email"):
             config = get_email_config(st.session_state.user_id)
             with st.form("admin_email_form"):
                 col1, col2 = st.columns(2)
@@ -2049,10 +2094,10 @@ def admin_dashboard_page():
                     smtp_port = st.number_input("SMTP Port", value=config['smtp_port'] if config else 587, step=1)
                     smtp_password = st.text_input("SMTP Password", type="password", value=config.get('smtp_password', '') if config else "")
                     use_tls = st.checkbox("Use TLS", value=config.get('use_tls', 1) if config else True)
-                if st.form_submit_button("💾 Save Email Settings"):
+                if st.form_submit_button("Save Email Settings", use_container_width=True):
                     save_email_config(st.session_state.user_id, smtp_server, smtp_port,
                                       smtp_username, smtp_password, from_email, use_tls)
-                    st.success("✅ Email settings saved.")
+                    st.success("Email settings saved.")
                     st.rerun()
 
 # -----------------------------------------------------------------------------
@@ -2071,53 +2116,53 @@ def render_sidebar():
             # Core
             st.subheader("Core")
             cols = st.columns(2)
-            with cols[0]: st.button("📊 Dashboard", use_container_width=True, on_click=change_page, args=("Dashboard",))
-            with cols[1]: st.button("💰 Sales", use_container_width=True, on_click=change_page, args=("Sales Dashboard",))
+            with cols[0]: st.button("Dashboard", use_container_width=True, on_click=change_page, args=("Dashboard",))
+            with cols[1]: st.button("Sales", use_container_width=True, on_click=change_page, args=("Sales Dashboard",))
             cols = st.columns(2)
-            with cols[0]: st.button("📝 Transactions", use_container_width=True, on_click=change_page, args=("View Transactions",))
-            with cols[1]: st.button("➕ Add Tx", use_container_width=True, on_click=change_page, args=("Add Transaction",))
+            with cols[0]: st.button("Transactions", use_container_width=True, on_click=change_page, args=("View Transactions",))
+            with cols[1]: st.button("Add Tx", use_container_width=True, on_click=change_page, args=("Add Transaction",))
             st.divider()
             # Profit & Inventory
             st.subheader("Business Intelligence")
             cols = st.columns(2)
-            with cols[0]: st.button("📈 Profit", use_container_width=True, on_click=change_page, args=("Profit Dashboard",))
-            with cols[1]: st.button("📦 Inventory", use_container_width=True, on_click=change_page, args=("Inventory",))
+            with cols[0]: st.button("Profit", use_container_width=True, on_click=change_page, args=("Profit Dashboard",))
+            with cols[1]: st.button("Inventory", use_container_width=True, on_click=change_page, args=("Inventory",))
             cols = st.columns(2)
-            with cols[0]: st.button("🧾 COGS", use_container_width=True, on_click=change_page, args=("COGS Analysis",))
-            with cols[1]: st.button("🏢 Businesses", use_container_width=True, on_click=change_page, args=("Businesses",))
+            with cols[0]: st.button("COGS", use_container_width=True, on_click=change_page, args=("COGS Analysis",))
+            with cols[1]: st.button("Businesses", use_container_width=True, on_click=change_page, args=("Businesses",))
             st.divider()
             # Advanced Analytics
             st.subheader("Advanced")
             cols = st.columns(2)
-            with cols[0]: st.button("📉 Trends", use_container_width=True, on_click=change_page, args=("Sales Trends",))
-            with cols[1]: st.button("🔮 Forecast", use_container_width=True, on_click=change_page, args=("Forecasting",))
+            with cols[0]: st.button("Trends", use_container_width=True, on_click=change_page, args=("Sales Trends",))
+            with cols[1]: st.button("Forecast", use_container_width=True, on_click=change_page, args=("Forecasting",))
             cols = st.columns(2)
-            with cols[0]: st.button("📊 Margins", use_container_width=True, on_click=change_page, args=("Profit Margins",))
-            with cols[1]: st.button("📂 Categories", use_container_width=True, on_click=change_page, args=("Expense Categories",))
+            with cols[0]: st.button("Margins", use_container_width=True, on_click=change_page, args=("Profit Margins",))
+            with cols[1]: st.button("Categories", use_container_width=True, on_click=change_page, args=("Expense Categories",))
             st.divider()
             # Milestone 4 – Reports & Admin
             st.subheader("Reports & Admin")
             cols = st.columns(2)
-            with cols[0]: st.button("📄 Generate Report", use_container_width=True, on_click=change_page, args=("Generate Report",))
-            with cols[1]: st.button("✉️ Email Settings", use_container_width=True, on_click=change_page, args=("Email Config",))
+            with cols[0]: st.button("Generate Report", use_container_width=True, on_click=change_page, args=("Generate Report",))
+            with cols[1]: st.button("Email Settings", use_container_width=True, on_click=change_page, args=("Email Config",))
             if is_admin():
                 cols = st.columns(2)
-                with cols[0]: st.button("👑 Admin", use_container_width=True, on_click=change_page, args=("Admin Dashboard",))
+                with cols[0]: st.button("Admin Dashboard", use_container_width=True, on_click=change_page, args=("Admin Dashboard",))
             st.divider()
             # Data & Profile
             st.subheader("Data")
             cols = st.columns(2)
-            with cols[0]: st.button("📤 Import", use_container_width=True, on_click=change_page, args=("Import Transactions",))
-            with cols[1]: st.button("🔍 Analyze", use_container_width=True, on_click=change_page, args=("Analyze Data",))
+            with cols[0]: st.button("Import", use_container_width=True, on_click=change_page, args=("Import Transactions",))
+            with cols[1]: st.button("Analyze", use_container_width=True, on_click=change_page, args=("Analyze Data",))
             st.divider()
             st.subheader("Account")
             cols = st.columns(2)
-            with cols[0]: st.button("👤 Profile", use_container_width=True, on_click=change_page, args=("Profile",))
-            with cols[1]: st.button("🚪 Logout", use_container_width=True, on_click=logout_user)
+            with cols[0]: st.button("Profile", use_container_width=True, on_click=change_page, args=("Profile",))
+            with cols[1]: st.button("Logout", use_container_width=True, on_click=logout_user)
         else:
-            st.button("🏠 Home", use_container_width=True, on_click=change_page, args=("Home",))
-            st.button("🔑 Login", use_container_width=True, on_click=change_page, args=("Login",))
-            st.button("📝 Sign Up", use_container_width=True, on_click=change_page, args=("Sign Up",))
+            st.button("Home", use_container_width=True, on_click=change_page, args=("Home",))
+            st.button("Login", use_container_width=True, on_click=change_page, args=("Login",))
+            st.button("Sign Up", use_container_width=True, on_click=change_page, args=("Sign Up",))
 
 def main():
     st.set_page_config(layout="wide", page_title="Business Analyzer")
