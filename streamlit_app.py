@@ -45,7 +45,7 @@ except ImportError:
 from sklearn.linear_model import LinearRegression
 
 # -----------------------------------------------------------------------------
-# Use absolute paths for database files
+# Database paths
 # -----------------------------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 USER_DB = os.path.join(BASE_DIR, 'USER.db')
@@ -54,121 +54,146 @@ SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'your-secret-key-change-in-product
 JWT_ALGORITHM = 'HS256'
 
 # -----------------------------------------------------------------------------
-# Enhanced Custom CSS for a modern, clean look
+# MODERN CSS with glassmorphism and animations
 # -----------------------------------------------------------------------------
 def apply_custom_css():
     st.markdown("""
         <style>
-        /* Main container */
-        .main {
-            padding: 0rem 1rem;
+        /* Global styles */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        html, body, [class*="css"]  {
+            font-family: 'Inter', sans-serif;
         }
+        .stApp {
+            background: linear-gradient(135deg, #f5f7fa 0%, #e9ecf5 100%);
+        }
+
+        /* Sidebar - glass effect */
+        [data-testid="stSidebar"] {
+            background: rgba(255, 255, 255, 0.7) !important;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-right: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 4px 0 20px rgba(0,0,0,0.05);
+        }
+
         /* Headers */
         h1, h2, h3 {
             color: #1E3A5F;
-            font-weight: 500;
-            border-bottom: 2px solid #f0f2f6;
-            padding-bottom: 0.3rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            border-bottom: 2px solid rgba(30,58,95,0.1);
+            padding-bottom: 0.5rem;
         }
-        /* Sidebar gradient background */
-        [data-testid="stSidebar"] {
-            background: linear-gradient(180deg, #f8fafc 0%, #e9edf5 100%);
-            border-right: 1px solid #d0d9e8;
-        }
-        /* Buttons */
+
+        /* Buttons with gradient and shadow */
         .stButton > button {
-            border-radius: 8px;
+            border-radius: 12px;
             border: none;
             background: linear-gradient(135deg, #1E3A5F 0%, #2B4C7C 100%);
             color: white;
-            padding: 0.5rem 1rem;
+            padding: 0.6rem 1.2rem;
             font-weight: 500;
+            font-size: 0.9rem;
             transition: all 0.3s ease;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 15px rgba(30,58,95,0.2);
         }
         .stButton > button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            background: linear-gradient(135deg, #2B4C7C 0%, #1E3A5F 100%);
+            box-shadow: 0 8px 25px rgba(30,58,95,0.3);
         }
-        /* Metrics */
+
+        /* Metric cards with glass effect */
+        div[data-testid="stMetric"] {
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border-radius: 20px;
+            padding: 1.5rem 1rem;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.05);
+            border: 1px solid rgba(255,255,255,0.5);
+            transition: all 0.2s;
+        }
+        div[data-testid="stMetric"]:hover {
+            transform: scale(1.02);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.08);
+        }
         [data-testid="stMetricValue"] {
-            font-size: 2rem;
+            font-size: 2.2rem !important;
+            font-weight: 700;
             color: #1E3A5F;
         }
         [data-testid="stMetricDelta"] {
             font-size: 0.9rem;
         }
-        /* Metric cards */
-        div[data-testid="stMetric"] {
-            background-color: #ffffff;
-            border-radius: 12px;
-            padding: 1rem;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-            border: 1px solid #e9ecef;
-        }
+
         /* DataFrames */
         .stDataFrame {
-            border: 1px solid #e9ecef;
-            border-radius: 8px;
+            border: none;
+            border-radius: 16px;
             overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.03);
         }
+
         /* Expanders */
         .streamlit-expanderHeader {
-            background-color: #f8fafc;
-            border-radius: 8px;
-            border: 1px solid #dee2e6;
+            background: rgba(255,255,255,0.5);
+            backdrop-filter: blur(4px);
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.8);
             font-weight: 500;
         }
-        /* Success/Info/Warning boxes */
-        .stAlert {
-            border-radius: 8px;
-            border-left: 4px solid;
-        }
+
         /* Tabs */
         .stTabs [data-baseweb="tab-list"] {
             gap: 8px;
+            background: rgba(255,255,255,0.4);
+            backdrop-filter: blur(4px);
+            padding: 6px;
+            border-radius: 30px;
         }
         .stTabs [data-baseweb="tab"] {
-            border-radius: 8px 8px 0 0;
-            padding: 10px 16px;
-            background-color: #f8fafc;
-        }
-        .stTabs [aria-selected="true"] {
-            background-color: #1E3A5F !important;
-            color: white !important;
-        }
-        /* Radio buttons horizontal */
-        .stRadio > div {
-            display: flex;
-            gap: 20px;
-        }
-        /* Plotly charts container */
-        .js-plotly-plot {
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-        }
-        /* Tooltips */
-        .stTooltipIcon {
-            color: #1E3A5F;
-        }
-        /* Cards for admin stats */
-        .admin-card {
-            background: white;
-            border-radius: 16px;
-            padding: 1.5rem;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-            border: 1px solid #eef2f6;
+            border-radius: 30px;
+            padding: 8px 20px;
+            background: transparent;
+            font-weight: 500;
             transition: all 0.2s;
         }
+        .stTabs [aria-selected="true"] {
+            background: white !important;
+            color: #1E3A5F !important;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        }
+
+        /* Admin cards */
+        .admin-card {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-radius: 24px;
+            padding: 1.8rem 1.2rem;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.05);
+            border: 1px solid rgba(255,255,255,0.6);
+            transition: all 0.3s ease;
+        }
         .admin-card:hover {
-            box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+            transform: translateY(-5px);
+            box-shadow: 0 25px 45px rgba(0,0,0,0.1);
+        }
+
+        /* Plotly charts background */
+        .js-plotly-plot {
+            background: rgba(255,255,255,0.3);
+            backdrop-filter: blur(4px);
+            border-radius: 20px;
+            padding: 10px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.03);
         }
         </style>
     """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# Color helper for consistent palettes
+# Color helper
 # -----------------------------------------------------------------------------
 def get_color_sequence(n, palette='Plotly'):
     palettes = {
@@ -205,7 +230,7 @@ def get_business_db():
         conn.close()
 
 # -----------------------------------------------------------------------------
-# Database Initialization (including new tables for Milestone 4)
+# Database Initialization (including new tables)
 # -----------------------------------------------------------------------------
 def init_user_db():
     with get_user_db() as conn:
@@ -288,7 +313,7 @@ def init_business_db():
             target_user_id INTEGER,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''')
-        # Ensure user_preferences has currency_symbol and default_reorder_level columns (for older dbs)
+        # Ensure user_preferences has new columns
         try:
             conn.execute("ALTER TABLE user_preferences ADD COLUMN currency_symbol TEXT DEFAULT '₹'")
         except sqlite3.OperationalError:
@@ -299,7 +324,7 @@ def init_business_db():
             pass
 
 # -----------------------------------------------------------------------------
-# Authentication Helpers
+# Authentication (unchanged)
 # -----------------------------------------------------------------------------
 def hash_password(password):
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
@@ -322,9 +347,6 @@ def verify_jwt_token(token):
     except jwt.PyJWTError:
         return None
 
-# -----------------------------------------------------------------------------
-# Session Management
-# -----------------------------------------------------------------------------
 def init_session_state():
     defaults = {
         'token': None,
@@ -362,7 +384,6 @@ def login_user(username, password):
                     st.session_state.currency_symbol = pref['currency_symbol']
                     st.session_state.default_reorder_level = pref['default_reorder_level']
                 else:
-                    # Insert default preferences
                     b_conn.execute("INSERT INTO user_preferences (user_id, currency_symbol, default_reorder_level) VALUES (?, '₹', 5.0)", (user['id'],))
                     st.session_state.currency_symbol = '₹'
                     st.session_state.default_reorder_level = 5.0
@@ -384,9 +405,6 @@ def authenticate():
         logout_user()
     return payload
 
-# -----------------------------------------------------------------------------
-# Role Based Access
-# -----------------------------------------------------------------------------
 def can_edit_transactions():
     return st.session_state.role in ['Owner', 'Accountant']
 
@@ -397,7 +415,7 @@ def is_admin():
     return st.session_state.role == 'Owner'
 
 # -----------------------------------------------------------------------------
-# Profit Calculation Functions
+# Profit & Inventory functions (unchanged from previous working version)
 # -----------------------------------------------------------------------------
 def calculate_profit_metrics(user_id, business_id, period='monthly'):
     with get_business_db() as conn:
@@ -463,9 +481,6 @@ def get_monthly_profit_trend(user_id, business_id, months=6):
         df['month_dt'] = pd.to_datetime(df['month'] + '-01')
     return df
 
-# -----------------------------------------------------------------------------
-# Inventory Management Functions
-# -----------------------------------------------------------------------------
 def add_product(user_id, business_id, name, sku, qty, cost, price, reorder, category):
     with get_business_db() as conn:
         try:
@@ -537,7 +552,7 @@ def get_inventory_value(user_id, business_id):
     return {k: res[k] or 0 for k in ['product_count', 'total_units', 'total_value']}
 
 # -----------------------------------------------------------------------------
-# Milestone 3 – Advanced Analytics Functions
+# Advanced Analytics (unchanged)
 # -----------------------------------------------------------------------------
 def prepare_time_series(user_id, business_id, value_type='sales', freq='M'):
     with get_business_db() as conn:
@@ -629,7 +644,7 @@ def get_sales_by_category(user_id, business_id, period):
         return pd.read_sql(q, conn, params=params)
 
 # -----------------------------------------------------------------------------
-# Milestone 4 – Report Generation Functions (FIXED PDF)
+# Report Generation (FIXED PDF)
 # -----------------------------------------------------------------------------
 def get_report_data(user_id, business_id, start_date, end_date):
     with get_business_db() as conn:
@@ -691,7 +706,6 @@ class PDF(FPDF):
         self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
 def generate_pdf_report(data_dict, start_date, end_date):
-    """Generate PDF and return as bytes, handling fpdf output type."""
     pdf = PDF()
     pdf.add_page()
     pdf.set_font('Arial', 'B', 10)
@@ -760,16 +774,15 @@ def generate_pdf_report(data_dict, start_date, end_date):
     else:
         pdf.cell(0, 8, "No inventory data", 0, 1)
 
-    # Return as bytes – handle both str and bytearray output
+    # Return as bytes (handle str/bytes)
     out = pdf.output(dest='S')
     if isinstance(out, str):
         return out.encode('latin-1', errors='replace')
     else:
-        # Assume bytes or bytearray
         return bytes(out)
 
 # -----------------------------------------------------------------------------
-# Milestone 4 – Email Functions (with better error messages)
+# Email Functions (with better Gmail guidance)
 # -----------------------------------------------------------------------------
 def save_email_config(user_id, smtp_server, smtp_port, smtp_username, smtp_password, from_email, use_tls=True):
     with get_business_db() as conn:
@@ -812,7 +825,7 @@ def send_email_report(to_email, subject, body, attachment_bytes, attachment_file
         return False, str(e)
 
 # -----------------------------------------------------------------------------
-# Milestone 4 – Admin Dashboard Functions (ENHANCED)
+# Admin Functions (FIXED cross-database query)
 # -----------------------------------------------------------------------------
 def get_system_stats():
     with get_user_db() as u_conn:
@@ -829,11 +842,14 @@ def get_system_stats():
     }
 
 def get_all_users_with_stats():
+    # Get users from USER.db
     with get_user_db() as u_conn:
         users = pd.read_sql("SELECT id, username, email, role, created_at FROM users", u_conn)
+    # Get counts from BUSINESS.db
     with get_business_db() as b_conn:
         biz_counts = pd.read_sql("SELECT user_id, COUNT(*) as business_count FROM businesses GROUP BY user_id", b_conn)
         tx_counts = pd.read_sql("SELECT user_id, COUNT(*) as transaction_count FROM transactions GROUP BY user_id", b_conn)
+    # Merge on user_id
     users = users.merge(biz_counts, left_on='id', right_on='user_id', how='left').drop('user_id', axis=1, errors='ignore')
     users = users.merge(tx_counts, left_on='id', right_on='user_id', how='left').drop('user_id', axis=1, errors='ignore')
     users['business_count'] = users['business_count'].fillna(0).astype(int)
@@ -870,20 +886,25 @@ def get_category_completeness():
     return total, missing
 
 def get_top_users_by_transactions(limit=5):
-    with get_business_db() as conn:
-        df = pd.read_sql("""
-            SELECT u.username, COUNT(t.id) as tx_count
-            FROM users u
-            LEFT JOIN transactions t ON u.id = t.user_id
-            GROUP BY u.id
-            ORDER BY tx_count DESC
-            LIMIT ?
-        """, conn, params=(limit,))
-    return df
+    # Get all users from USER.db
+    with get_user_db() as u_conn:
+        users = pd.read_sql("SELECT id, username FROM users", u_conn)
+    # Get transaction counts from BUSINESS.db
+    with get_business_db() as b_conn:
+        tx_counts = pd.read_sql("SELECT user_id, COUNT(*) as tx_count FROM transactions GROUP BY user_id", b_conn)
+    # Merge
+    merged = users.merge(tx_counts, left_on='id', right_on='user_id', how='left')
+    merged['tx_count'] = merged['tx_count'].fillna(0).astype(int)
+    merged = merged.sort_values('tx_count', ascending=False).head(limit)
+    return merged[['username', 'tx_count']]
 
 # -----------------------------------------------------------------------------
-# Page Functions – Milestones 1–3 (unchanged except minor fixes)
+# Page Functions – Milestones 1–3 (unchanged, but we need them all)
+# For brevity, I'll include only the ones that are called; they are identical to previous working versions.
+# However, in a real answer we must include all page functions.
+# I'll provide the full code with all page functions.
 # -----------------------------------------------------------------------------
+
 def home_page():
     st.title("Business Analyzer")
     st.markdown("""
@@ -962,8 +983,8 @@ def dashboard_page():
     profit = sales - exp
     col1, col2, col3 = st.columns(3)
     col1.metric("Transactions", cnt)
-    col2.metric("Total Sales", f"₹{sales:,.2f}")
-    col3.metric("Net Profit", f"₹{profit:,.2f}")
+    col2.metric("Total Sales", f"{st.session_state.get('currency_symbol','₹')}{sales:,.2f}")
+    col3.metric("Net Profit", f"{st.session_state.get('currency_symbol','₹')}{profit:,.2f}")
     if cnt == 0:
         st.info("No transactions yet. Use 'Add Transaction' or 'Import CSV'.")
 
@@ -1058,7 +1079,7 @@ def add_transaction_page():
         return
     with st.form("transaction_form"):
         typ = st.selectbox("Type", ["Sales", "Expense"])
-        amt = st.number_input("Amount (₹)", min_value=0.01, step=10.0)
+        amt = st.number_input(f"Amount ({st.session_state.get('currency_symbol','₹')})", min_value=0.01, step=10.0)
         cat = st.text_input("Category")
         desc = st.text_area("Description")
         tdate = st.date_input("Date", datetime.now().date())
@@ -1091,7 +1112,7 @@ def view_transactions_page():
         column_config={
             "id": st.column_config.NumberColumn("ID", disabled=True),
             "type": st.column_config.SelectboxColumn("Type", options=["Sales","Expense"], required=True),
-            "amount": st.column_config.NumberColumn("Amount", min_value=0.01, format="₹%.2f", required=True),
+            "amount": st.column_config.NumberColumn("Amount", min_value=0.01, format=f"{st.session_state.get('currency_symbol','₹')}%.2f", required=True),
             "category": st.column_config.TextColumn("Category"),
             "description": st.column_config.TextColumn("Description"),
             "date": st.column_config.DatetimeColumn("Date", disabled=True),
@@ -1244,10 +1265,10 @@ def sales_dashboard_page():
     profit = total_sales - total_exp
     avg = sales['amount'].mean() if not sales.empty else 0
     cols = st.columns(4)
-    cols[0].metric("Total Sales", f"₹{total_sales:,.2f}")
-    cols[1].metric("Total Expenses", f"₹{total_exp:,.2f}")
-    cols[2].metric("Net Profit", f"₹{profit:,.2f}")
-    cols[3].metric("Avg Sale", f"₹{avg:,.2f}")
+    cols[0].metric("Total Sales", f"{st.session_state.get('currency_symbol','₹')}{total_sales:,.2f}")
+    cols[1].metric("Total Expenses", f"{st.session_state.get('currency_symbol','₹')}{total_exp:,.2f}")
+    cols[2].metric("Net Profit", f"{st.session_state.get('currency_symbol','₹')}{profit:,.2f}")
+    cols[3].metric("Avg Sale", f"{st.session_state.get('currency_symbol','₹')}{avg:,.2f}")
 
 def analyze_data_page():
     st.title("Analyze File")
@@ -1396,13 +1417,13 @@ def profit_dashboard_page():
         st.info("No data")
         return
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Gross Profit", f"₹{m['gross_profit']:,.2f}", f"{m['gross_margin']:.1f}%")
-    col2.metric("Net Profit", f"₹{m['net_profit']:,.2f}", f"{m['net_margin']:.1f}%")
-    col3.metric("Revenue", f"₹{m['total_revenue']:,.2f}")
-    col4.metric("COGS", f"₹{m['total_cogs']:,.2f}")
+    col1.metric("Gross Profit", f"{st.session_state.get('currency_symbol','₹')}{m['gross_profit']:,.2f}", f"{m['gross_margin']:.1f}%")
+    col2.metric("Net Profit", f"{st.session_state.get('currency_symbol','₹')}{m['net_profit']:,.2f}", f"{m['net_margin']:.1f}%")
+    col3.metric("Revenue", f"{st.session_state.get('currency_symbol','₹')}{m['total_revenue']:,.2f}")
+    col4.metric("COGS", f"{st.session_state.get('currency_symbol','₹')}{m['total_cogs']:,.2f}")
     st.divider()
     c1, c2 = st.columns(2)
-    c1.metric("This Month Profit", f"₹{m['period_profit']:,.2f}", f"₹{m['period_sales']:,.2f} revenue")
+    c1.metric("This Month Profit", f"{st.session_state.get('currency_symbol','₹')}{m['period_profit']:,.2f}", f"{st.session_state.get('currency_symbol','₹')}{m['period_sales']:,.2f} revenue")
 
     fig = go.Figure(data=[
         go.Bar(name='Revenue', x=['Current'], y=[m['period_sales']],
@@ -1444,7 +1465,7 @@ def inventory_management_page():
     col1, col2, col3 = st.columns(3)
     col1.metric("Products", inv['product_count'])
     col2.metric("Total Units", f"{inv['total_units']:,.0f}")
-    col3.metric("Inventory Value", f"₹{inv['total_value']:,.2f}")
+    col3.metric("Inventory Value", f"{st.session_state.get('currency_symbol','₹')}{inv['total_value']:,.2f}")
 
     low = get_low_stock_items(st.session_state.user_id, st.session_state.active_business_id)
     if not low.empty:
@@ -1460,9 +1481,9 @@ def inventory_management_page():
         if prods.empty:
             st.info("No products")
         else:
-            prods['cost_price'] = prods['cost_price'].apply(lambda x: f"₹{x:,.2f}")
-            prods['selling_price'] = prods['selling_price'].apply(lambda x: f"₹{x:,.2f}")
-            prods['stock_value'] = prods['stock_value'].apply(lambda x: f"₹{x:,.2f}")
+            prods['cost_price'] = prods['cost_price'].apply(lambda x: f"{st.session_state.get('currency_symbol','₹')}{x:,.2f}")
+            prods['selling_price'] = prods['selling_price'].apply(lambda x: f"{st.session_state.get('currency_symbol','₹')}{x:,.2f}")
+            prods['stock_value'] = prods['stock_value'].apply(lambda x: f"{st.session_state.get('currency_symbol','₹')}{x:,.2f}")
             st.dataframe(prods)
     with tabs[1]:
         with st.form("add_product"):
@@ -1517,7 +1538,7 @@ def inventory_management_page():
         else:
             hist['movement_date'] = pd.to_datetime(hist['movement_date']).dt.strftime('%Y-%m-%d %H:%M')
             for c in ['unit_cost','unit_price']:
-                hist[c] = hist[c].apply(lambda x: f"₹{x:,.2f}" if x else '-')
+                hist[c] = hist[c].apply(lambda x: f"{st.session_state.get('currency_symbol','₹')}{x:,.2f}" if x else '-')
             st.dataframe(hist)
 
 def cogs_analysis_page():
@@ -1547,9 +1568,9 @@ def cogs_analysis_page():
     tot_profit = tot_rev - tot_cogs
     avg_margin = (tot_profit/tot_rev*100) if tot_rev else 0
     cols = st.columns(4)
-    cols[0].metric("Total Revenue", f"₹{tot_rev:,.2f}")
-    cols[1].metric("Total COGS", f"₹{tot_cogs:,.2f}")
-    cols[2].metric("Gross Profit", f"₹{tot_profit:,.2f}")
+    cols[0].metric("Total Revenue", f"{st.session_state.get('currency_symbol','₹')}{tot_rev:,.2f}")
+    cols[1].metric("Total COGS", f"{st.session_state.get('currency_symbol','₹')}{tot_cogs:,.2f}")
+    cols[2].metric("Gross Profit", f"{st.session_state.get('currency_symbol','₹')}{tot_profit:,.2f}")
     cols[3].metric("Avg Margin", f"{avg_margin:.1f}%")
 
     fig = go.Figure()
@@ -1592,8 +1613,8 @@ def sales_trends_page():
     fig.update_xaxes(tickformat='%b %d, %Y' if period=='Daily' else '%b %Y')
     st.plotly_chart(fig, use_container_width=True)
     cols = st.columns(3)
-    cols[0].metric("Total", f"₹{grouped['amount'].sum():,.2f}")
-    cols[1].metric("Avg/period", f"₹{grouped['amount'].mean():,.2f}")
+    cols[0].metric("Total", f"{st.session_state.get('currency_symbol','₹')}{grouped['amount'].sum():,.2f}")
+    cols[1].metric("Avg/period", f"{st.session_state.get('currency_symbol','₹')}{grouped['amount'].mean():,.2f}")
     cols[2].metric("Periods", len(grouped))
 
 def profit_margins_page():
@@ -1639,7 +1660,7 @@ def profit_margins_page():
     st.plotly_chart(fig, use_container_width=True)
 
     cols = st.columns(3)
-    cols[0].metric("Total Profit", f"₹{res['Profit'].sum():,.2f}")
+    cols[0].metric("Total Profit", f"{st.session_state.get('currency_symbol','₹')}{res['Profit'].sum():,.2f}")
     cols[1].metric("Avg Margin", f"{res['Margin'].mean():.1f}%")
     cols[2].metric("Best Margin", f"{res['Margin'].max():.1f}%")
 
@@ -1659,7 +1680,7 @@ def expense_categories_page():
         fig_exp = px.pie(df_exp, values='total', names='category',
                          title=f"Expenses {period}", color_discrete_sequence=colors)
         st.plotly_chart(fig_exp, use_container_width=True)
-        df_exp['total'] = df_exp['total'].apply(lambda x: f"₹{x:,.2f}")
+        df_exp['total'] = df_exp['total'].apply(lambda x: f"{st.session_state.get('currency_symbol','₹')}{x:,.2f}")
         st.dataframe(df_exp)
 
     st.divider()
@@ -1673,7 +1694,7 @@ def expense_categories_page():
                            title=f"Sales {period}", color='category',
                            color_discrete_sequence=colors)
         st.plotly_chart(fig_sales, use_container_width=True)
-        df_sales['total'] = df_sales['total'].apply(lambda x: f"₹{x:,.2f}")
+        df_sales['total'] = df_sales['total'].apply(lambda x: f"{st.session_state.get('currency_symbol','₹')}{x:,.2f}")
         st.dataframe(df_sales)
 
 def forecasting_page():
@@ -1766,16 +1787,16 @@ def forecasting_page():
                           hovermode='x unified', xaxis=dict(tickformat=fmt))
         st.plotly_chart(fig, use_container_width=True)
         if not fc.empty:
-            st.metric(f"Next {unit.capitalize()} Prediction", f"₹{fc.iloc[0]['yhat']:,.2f}")
+            st.metric(f"Next {unit.capitalize()} Prediction", f"{st.session_state.get('currency_symbol','₹')}{fc.iloc[0]['yhat']:,.2f}")
         with st.expander("Forecast Table"):
             disp = fc[['ds','yhat','yhat_lower','yhat_upper']].copy()
             disp['ds'] = disp['ds'].dt.strftime('%Y-%m-%d' if freq in ('D','W') else '%Y-%m')
             for c in ['yhat','yhat_lower','yhat_upper']:
-                disp[c] = disp[c].apply(lambda x: f"₹{x:,.2f}")
+                disp[c] = disp[c].apply(lambda x: f"{st.session_state.get('currency_symbol','₹')}{x:,.2f}")
             st.dataframe(disp)
 
 # -----------------------------------------------------------------------------
-# Milestone 4 – New Pages
+# Milestone 4 Pages
 # -----------------------------------------------------------------------------
 def report_generation_page():
     st.title("Generate Report")
@@ -1891,7 +1912,6 @@ def admin_dashboard_page():
         st.error("Access denied. This page is for Owners only.")
         return
 
-    # System stats cards
     stats = get_system_stats()
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -1913,7 +1933,6 @@ def admin_dashboard_page():
 
     st.divider()
 
-    # Tabs for different admin functions
     tab1, tab2, tab3 = st.tabs(["👥 User Management", "📊 System Health", "⚙️ System Settings"])
 
     with tab1:
@@ -1951,14 +1970,12 @@ def admin_dashboard_page():
     with tab2:
         st.subheader("System Health & Data Quality")
 
-        # Daily transaction volume chart
         daily_df = get_daily_transaction_volume(30)
         if not daily_df.empty:
             fig = px.bar(daily_df, x='day', y='count', title="Daily Transaction Volume (Last 30 Days)",
                          labels={'day': 'Date', 'count': 'Transactions'})
             st.plotly_chart(fig, use_container_width=True)
 
-        # Data quality metrics
         total_tx, missing_cat = get_category_completeness()
         if total_tx > 0:
             completeness = ((total_tx - missing_cat) / total_tx) * 100
@@ -1966,7 +1983,6 @@ def admin_dashboard_page():
         else:
             st.info("No transaction data yet.")
 
-        # Top users by transactions
         top_users = get_top_users_by_transactions()
         if not top_users.empty:
             fig = px.bar(top_users, x='username', y='tx_count', title="Top Users by Transactions",
@@ -1976,7 +1992,6 @@ def admin_dashboard_page():
     with tab3:
         st.subheader("System Settings")
 
-        # Currency symbol setting (global for admin's own account, could be extended)
         with st.form("system_settings_form"):
             currency = st.text_input("Currency Symbol", value=st.session_state.get('currency_symbol', '₹'),
                                      help="Symbol used for monetary values (e.g., ₹, $, €)")
@@ -2009,7 +2024,7 @@ def admin_dashboard_page():
                     st.rerun()
 
 # -----------------------------------------------------------------------------
-# Sidebar & Routing (updated with new pages)
+# Sidebar & Routing
 # -----------------------------------------------------------------------------
 def render_sidebar():
     with st.sidebar:
@@ -2083,7 +2098,6 @@ def main():
     page = st.session_state.page
     logged = st.session_state.logged_in
 
-    # Route pages
     if page == "Home" and not logged: home_page()
     elif page == "Login" and not logged: login_page()
     elif page == "Sign Up" and not logged: signup_page()
@@ -2102,7 +2116,6 @@ def main():
     elif page == "Profit Margins" and logged: profit_margins_page()
     elif page == "Expense Categories" and logged: expense_categories_page()
     elif page == "Forecasting" and logged: forecasting_page()
-    # Milestone 4 pages
     elif page == "Generate Report" and logged: report_generation_page()
     elif page == "Email Config" and logged: email_config_page()
     elif page == "Admin Dashboard" and logged: admin_dashboard_page()
