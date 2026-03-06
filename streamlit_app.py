@@ -1101,7 +1101,8 @@ def add_transaction_page():
         return
     with st.form("transaction_form"):
         typ = st.selectbox("Type", ["Sales", "Expense"])
-        amt = st.number_input(f"Amount ({st.session_state.currency_symbol})", min_value=0.01, step=10.0)
+        # FIXED: amount starts at 0.0, step 1.0, format allows decimals
+        amt = st.number_input(f"Amount ({st.session_state.currency_symbol})", min_value=0.0, step=1.0, format="%.2f")
         cat = st.text_input("Category")
         desc = st.text_area("Description")
         tdate = st.date_input("Date", datetime.now().date())
