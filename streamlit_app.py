@@ -54,39 +54,28 @@ SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'your-secret-key-change-in-product
 JWT_ALGORITHM = 'HS256'
 
 # -----------------------------------------------------------------------------
-# Clean and modern CSS – clearly visible input fields
+# Clean and modern CSS – clearly visible input fields and select boxes
 # -----------------------------------------------------------------------------
 def apply_custom_css():
     st.markdown("""
         <style>
-        /* Import Inter font */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        html, body, [class*="css"]  {
-            font-family: 'Inter', sans-serif;
-        }
-        .stApp {
-            background: linear-gradient(135deg, #f5f7fa 0%, #e9ecf5 100%);
-        }
+        html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+        .stApp { background: linear-gradient(135deg, #f5f7fa 0%, #e9ecf5 100%); }
 
-        /* Sidebar */
         [data-testid="stSidebar"] {
             background: rgba(255, 255, 255, 0.7) !important;
             backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
             border-right: 1px solid rgba(255, 255, 255, 0.3);
-            box-shadow: 4px 0 20px rgba(0,0,0,0.05);
         }
 
-        /* Headers */
         h1, h2, h3 {
             color: #1E3A5F;
             font-weight: 600;
-            letter-spacing: -0.02em;
             border-bottom: 2px solid rgba(30,58,95,0.1);
             padding-bottom: 0.5rem;
         }
 
-        /* Buttons */
         .stButton > button {
             border-radius: 12px;
             border: none;
@@ -94,7 +83,6 @@ def apply_custom_css():
             color: white;
             padding: 0.6rem 1.2rem;
             font-weight: 500;
-            font-size: 0.9rem;
             transition: all 0.3s ease;
             box-shadow: 0 4px 15px rgba(30,58,95,0.2);
         }
@@ -103,20 +91,13 @@ def apply_custom_css():
             box-shadow: 0 8px 25px rgba(30,58,95,0.3);
         }
 
-        /* Metric cards */
         div[data-testid="stMetric"] {
             background: rgba(255, 255, 255, 0.6);
             backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
             border-radius: 20px;
             padding: 1.5rem 1rem;
             box-shadow: 0 8px 32px rgba(0,0,0,0.05);
             border: 1px solid rgba(255,255,255,0.5);
-            transition: all 0.2s;
-        }
-        div[data-testid="stMetric"]:hover {
-            transform: scale(1.02);
-            box-shadow: 0 12px 40px rgba(0,0,0,0.08);
         }
         [data-testid="stMetricValue"] {
             font-size: 2.2rem !important;
@@ -124,24 +105,8 @@ def apply_custom_css():
             color: #1E3A5F;
         }
 
-        /* DataFrames */
-        .stDataFrame {
-            border: none;
-            border-radius: 16px;
-            overflow: hidden;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.03);
-        }
+        .stDataFrame { border: none; border-radius: 16px; overflow: hidden; }
 
-        /* Expanders */
-        .streamlit-expanderHeader {
-            background: rgba(255,255,255,0.5);
-            backdrop-filter: blur(4px);
-            border-radius: 12px;
-            border: 1px solid rgba(255,255,255,0.8);
-            font-weight: 500;
-        }
-
-        /* Tabs */
         .stTabs [data-baseweb="tab-list"] {
             gap: 8px;
             background: rgba(255,255,255,0.4);
@@ -154,7 +119,6 @@ def apply_custom_css():
             padding: 8px 20px;
             background: transparent;
             font-weight: 500;
-            transition: all 0.2s;
         }
         .stTabs [aria-selected="true"] {
             background: white !important;
@@ -162,52 +126,34 @@ def apply_custom_css():
             box-shadow: 0 4px 10px rgba(0,0,0,0.05);
         }
 
-        /* Admin cards */
         .admin-card {
             background: rgba(255, 255, 255, 0.7);
             backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
             border-radius: 24px;
             padding: 1.8rem 1.2rem;
             box-shadow: 0 15px 35px rgba(0,0,0,0.05);
             border: 1px solid rgba(255,255,255,0.6);
-            transition: all 0.3s ease;
             text-align: center;
         }
-        .admin-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 25px 45px rgba(0,0,0,0.1);
-        }
-        .admin-card h3 {
-            margin-top: 0;
-            color: #1E3A5F;
-            font-size: 1.2rem;
-        }
-        .admin-card .value {
-            font-size: 2.5rem;
-            font-weight: 700;
-            color: #1E3A5F;
-        }
+        .admin-card .value { font-size: 2.5rem; font-weight: 700; color: #1E3A5F; }
 
-        /* Plotly charts background */
         .js-plotly-plot {
             background: rgba(255,255,255,0.3);
             backdrop-filter: blur(4px);
             border-radius: 20px;
             padding: 10px;
-            box-shadow: 0 8px 30px rgba(0,0,0,0.03);
         }
 
-        /* Form labels – bold and clearly visible */
-        .stTextInput label, .stNumberInput label, .stSelectbox label, .stDateInput label, .stTextArea label {
+        /* Enhanced input fields */
+        .stTextInput label, .stNumberInput label, .stSelectbox label,
+        .stDateInput label, .stTextArea label {
             font-weight: 600;
             color: #1E3A5F;
             font-size: 0.95rem;
-            margin-bottom: 0.2rem;
         }
 
-        /* Input fields – clearly visible with border, background, and shadow */
-        .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] > div, 
+        .stTextInput input, .stNumberInput input,
+        .stSelectbox div[data-baseweb="select"] > div,
         .stDateInput input, .stTextArea textarea {
             background-color: #ffffff !important;
             border: 2px solid #a0b8cc !important;
@@ -216,28 +162,38 @@ def apply_custom_css():
             box-shadow: 0 2px 6px rgba(0,0,0,0.05) !important;
             transition: all 0.2s ease;
         }
-        .stTextInput input:focus, .stNumberInput input:focus, .stSelectbox div[data-baseweb="select"] > div:focus,
+
+        .stTextInput input:focus, .stNumberInput input:focus,
+        .stSelectbox div[data-baseweb="select"] > div:focus,
         .stDateInput input:focus, .stTextArea textarea:focus {
             border-color: #1E3A5F !important;
             box-shadow: 0 0 0 3px rgba(30,58,95,0.2) !important;
         }
 
-        /* Selectbox dropdown button */
+        /* Ensure selectbox container has consistent styling */
         .stSelectbox div[data-baseweb="select"] > div {
             background-color: white;
             min-height: 45px;
         }
 
-        /* Checkbox */
+        /* Make the dropdown arrow visible */
+        .stSelectbox svg {
+            fill: #1E3A5F !important;
+        }
+
+        /* Dropdown menu styling */
+        div[data-baseweb="popover"] {
+            border-radius: 10px !important;
+            border: 2px solid #a0b8cc !important;
+            background-color: white !important;
+        }
+
         .stCheckbox label {
             font-weight: 500;
             color: #1E3A5F;
         }
 
-        /* Success/Warning/Info boxes */
-        .stAlert {
-            border-radius: 12px;
-        }
+        .stAlert { border-radius: 12px; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -815,7 +771,6 @@ def generate_pdf_report(data_dict, start_date, end_date):
     else:
         pdf.cell(0, 8, "No inventory data", 0, 1)
 
-    # Return as bytes
     out = pdf.output(dest='S')
     if isinstance(out, str):
         return out.encode('latin-1', errors='replace')
@@ -823,7 +778,7 @@ def generate_pdf_report(data_dict, start_date, end_date):
         return bytes(out)
 
 # -----------------------------------------------------------------------------
-# Simplified Email Sending (no configuration needed)
+# Simplified Email Sending (no configuration, local SMTP)
 # -----------------------------------------------------------------------------
 def send_email_simple(to_email, subject, body, attachment_bytes, attachment_filename, from_email):
     """
@@ -960,6 +915,7 @@ def signup_page():
         em = st.text_input("Email")
         pw = st.text_input("Password", type="password")
         cf = st.text_input("Confirm Password", type="password")
+        # Role selectbox – clearly visible due to enhanced CSS
         role = st.selectbox("Role", ["Owner", "Accountant", "Staff"])
         if st.form_submit_button("Sign Up", use_container_width=True):
             if not nu or not em or not pw:
@@ -1839,7 +1795,7 @@ def forecasting_page():
             st.dataframe(disp)
 
 # -----------------------------------------------------------------------------
-# Milestone 4 Pages (Simplified Email)
+# Milestone 4 Pages: Report Generation & Admin Dashboard
 # -----------------------------------------------------------------------------
 def report_generation_page():
     st.title("Generate Report")
@@ -1916,8 +1872,6 @@ def report_generation_page():
                     st.error(f"Email failed: {msg}. Ensure a local SMTP server is running on port 25.")
         except Exception as e:
             st.error(f"Report generation failed: {str(e)}")
-
-# Email configuration page removed as requested
 
 def admin_dashboard_page():
     st.title("Admin Dashboard")
@@ -2071,7 +2025,7 @@ def render_sidebar():
             with cols[0]: st.button("Margins", use_container_width=True, on_click=change_page, args=("Profit Margins",))
             with cols[1]: st.button("Categories", use_container_width=True, on_click=change_page, args=("Expense Categories",))
             st.divider()
-            # Milestone 4 – Reports & Admin (Email Settings removed)
+            # Milestone 4 – Reports & Admin
             st.subheader("Reports & Admin")
             cols = st.columns(2)
             with cols[0]: st.button("Generate Report", use_container_width=True, on_click=change_page, args=("Generate Report",))
