@@ -54,7 +54,7 @@ SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'your-secret-key-change-in-product
 JWT_ALGORITHM = 'HS256'
 
 # -----------------------------------------------------------------------------
-# Clean and modern CSS (no emojis, professional)
+# Clean and modern CSS – clearly visible input fields
 # -----------------------------------------------------------------------------
 def apply_custom_css():
     st.markdown("""
@@ -68,7 +68,7 @@ def apply_custom_css():
             background: linear-gradient(135deg, #f5f7fa 0%, #e9ecf5 100%);
         }
 
-        /* Sidebar - glass effect */
+        /* Sidebar */
         [data-testid="stSidebar"] {
             background: rgba(255, 255, 255, 0.7) !important;
             backdrop-filter: blur(10px);
@@ -122,9 +122,6 @@ def apply_custom_css():
             font-size: 2.2rem !important;
             font-weight: 700;
             color: #1E3A5F;
-        }
-        [data-testid="stMetricDelta"] {
-            font-size: 0.9rem;
         }
 
         /* DataFrames */
@@ -192,17 +189,6 @@ def apply_custom_css():
             color: #1E3A5F;
         }
 
-        /* Login page image container */
-        .login-image {
-            text-align: center;
-            margin-bottom: 2rem;
-        }
-        .login-image img {
-            max-width: 80%;
-            border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-        }
-
         /* Plotly charts background */
         .js-plotly-plot {
             background: rgba(255,255,255,0.3);
@@ -212,8 +198,38 @@ def apply_custom_css():
             box-shadow: 0 8px 30px rgba(0,0,0,0.03);
         }
 
-        /* Form labels */
-        .stTextInput label, .stNumberInput label, .stSelectbox label, .stDateInput label {
+        /* Form labels – bold and clearly visible */
+        .stTextInput label, .stNumberInput label, .stSelectbox label, .stDateInput label, .stTextArea label {
+            font-weight: 600;
+            color: #1E3A5F;
+            font-size: 0.95rem;
+            margin-bottom: 0.2rem;
+        }
+
+        /* Input fields – clearly visible with border, background, and shadow */
+        .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] > div, 
+        .stDateInput input, .stTextArea textarea {
+            background-color: #ffffff !important;
+            border: 2px solid #a0b8cc !important;
+            border-radius: 10px !important;
+            padding: 0.6rem 1rem !important;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05) !important;
+            transition: all 0.2s ease;
+        }
+        .stTextInput input:focus, .stNumberInput input:focus, .stSelectbox div[data-baseweb="select"] > div:focus,
+        .stDateInput input:focus, .stTextArea textarea:focus {
+            border-color: #1E3A5F !important;
+            box-shadow: 0 0 0 3px rgba(30,58,95,0.2) !important;
+        }
+
+        /* Selectbox dropdown button */
+        .stSelectbox div[data-baseweb="select"] > div {
+            background-color: white;
+            min-height: 45px;
+        }
+
+        /* Checkbox */
+        .stCheckbox label {
             font-weight: 500;
             color: #1E3A5F;
         }
@@ -328,16 +344,6 @@ def init_business_db():
             movement_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             notes TEXT,
             FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
-        )''')
-        conn.execute('''CREATE TABLE IF NOT EXISTS email_config (
-            user_id INTEGER PRIMARY KEY,
-            smtp_server TEXT NOT NULL,
-            smtp_port INTEGER NOT NULL,
-            smtp_username TEXT,
-            smtp_password TEXT,
-            from_email TEXT NOT NULL,
-            use_tls BOOLEAN DEFAULT 1,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )''')
         conn.execute('''CREATE TABLE IF NOT EXISTS admin_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -817,24 +823,15 @@ def generate_pdf_report(data_dict, start_date, end_date):
         return bytes(out)
 
 # -----------------------------------------------------------------------------
-# Email Functions
+# Simplified Email Sending (no configuration needed)
 # -----------------------------------------------------------------------------
-def save_email_config(user_id, smtp_server, smtp_port, smtp_username, smtp_password, from_email, use_tls=True):
-    with get_business_db() as conn:
-        conn.execute("""
-            INSERT OR REPLACE INTO email_config
-            (user_id, smtp_server, smtp_port, smtp_username, smtp_password, from_email, use_tls)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (user_id, smtp_server, smtp_port, smtp_username, smtp_password, from_email, use_tls))
-
-def get_email_config(user_id):
-    with get_business_db() as conn:
-        row = conn.execute("SELECT * FROM email_config WHERE user_id = ?", (user_id,)).fetchone()
-    return dict(row) if row else None
-
-def send_email_report(to_email, subject, body, attachment_bytes, attachment_filename, smtp_config):
+def send_email_simple(to_email, subject, body, attachment_bytes, attachment_filename, from_email):
+    """
+    Send email using local SMTP server (no authentication).
+    Assumes a local mail server (e.g., sendmail) is running on port 25.
+    """
     msg = MIMEMultipart()
-    msg['From'] = smtp_config['from_email']
+    msg['From'] = from_email
     msg['To'] = to_email
     msg['Subject'] = subject
     msg.attach(MIMEText(body, 'plain'))
@@ -846,16 +843,10 @@ def send_email_report(to_email, subject, body, attachment_bytes, attachment_file
     msg.attach(part)
 
     try:
-        server = smtplib.SMTP(smtp_config['smtp_server'], smtp_config['smtp_port'])
-        if smtp_config.get('use_tls', True):
-            server.starttls()
-        if smtp_config['smtp_username'] and smtp_config['smtp_password']:
-            server.login(smtp_config['smtp_username'], smtp_config['smtp_password'])
+        server = smtplib.SMTP('localhost', 25)  # local SMTP server, no auth
         server.send_message(msg)
         server.quit()
-        return True, "Email sent successfully."
-    except smtplib.SMTPAuthenticationError as e:
-        return False, f"Authentication failed: {str(e)}. For Gmail, use an App Password (https://myaccount.google.com/apppasswords)."
+        return True, "Email sent successfully via local SMTP."
     except Exception as e:
         return False, str(e)
 
@@ -895,7 +886,6 @@ def delete_user(user_id):
         b_conn.execute("DELETE FROM transactions WHERE user_id = ?", (user_id,))
         b_conn.execute("DELETE FROM businesses WHERE user_id = ?", (user_id,))
         b_conn.execute("DELETE FROM products WHERE user_id = ?", (user_id,))
-        b_conn.execute("DELETE FROM email_config WHERE user_id = ?", (user_id,))
         b_conn.execute("DELETE FROM user_preferences WHERE user_id = ?", (user_id,))
 
 def get_daily_transaction_volume(days=30):
@@ -948,13 +938,7 @@ def home_page():
 
 def login_page():
     st.title("Login")
-    # Display a business illustration (using a free image from Unsplash or placeholder)
-    st.markdown("""
-    <div class="login-image">
-        <img src="https://images.unsplash.com/photo-1460925895917-afdab827c52f?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80" alt="Business Dashboard">
-    </div>
-    """, unsafe_allow_html=True)
-
+    # Image removed as requested
     with st.form("login_form"):
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
@@ -1446,7 +1430,6 @@ def profile_page():
                 b_conn.execute("DELETE FROM transactions WHERE user_id = ?", (st.session_state.user_id,))
                 b_conn.execute("DELETE FROM businesses WHERE user_id = ?", (st.session_state.user_id,))
                 b_conn.execute("DELETE FROM products WHERE user_id = ?", (st.session_state.user_id,))
-                b_conn.execute("DELETE FROM email_config WHERE user_id = ?", (st.session_state.user_id,))
                 b_conn.execute("DELETE FROM user_preferences WHERE user_id = ?", (st.session_state.user_id,))
             with get_user_db() as conn:
                 conn.execute("DELETE FROM users WHERE id = ?", (st.session_state.user_id,))
@@ -1855,7 +1838,7 @@ def forecasting_page():
             st.dataframe(disp)
 
 # -----------------------------------------------------------------------------
-# Milestone 4 Pages
+# Milestone 4 Pages (Simplified Email)
 # -----------------------------------------------------------------------------
 def report_generation_page():
     st.title("Generate Report")
@@ -1876,11 +1859,11 @@ def report_generation_page():
         send_email = st.checkbox("Send report via email")
         if send_email:
             email_to = st.text_input("Recipient Email")
-            config = get_email_config(st.session_state.user_id)
-            if config:
-                st.info("Email settings loaded from your profile.")
-            else:
-                st.warning("Please configure email settings in 'Email Settings' page.")
+            # Get owner's email from user database
+            with get_user_db() as conn:
+                user = conn.execute("SELECT email FROM users WHERE id = ?", (st.session_state.user_id,)).fetchone()
+            owner_email = user['email'] if user else ""
+            st.info(f"Report will be sent from your registered email: {owner_email}")
         else:
             email_to = None
 
@@ -1920,53 +1903,20 @@ def report_generation_page():
                 filename = f"report_{start_date}_to_{end_date}.pdf"
 
             if send_email and email_to:
-                config = get_email_config(st.session_state.user_id)
-                if not config:
-                    st.error("No email configuration found. Please set up in Email Settings.")
+                with get_user_db() as conn:
+                    user = conn.execute("SELECT email FROM users WHERE id = ?", (st.session_state.user_id,)).fetchone()
+                from_email = user['email'] if user else "business-analyzer@localhost"
+                subject = f"Business Report {start_date} to {end_date}"
+                body = f"Please find attached your business report for period {start_date} to {end_date}."
+                ok, msg = send_email_simple(email_to, subject, body, attachment, filename, from_email)
+                if ok:
+                    st.success(msg)
                 else:
-                    subject = f"Business Report {start_date} to {end_date}"
-                    body = f"Please find attached your business report for period {start_date} to {end_date}."
-                    ok, msg = send_email_report(email_to, subject, body, attachment, filename, config)
-                    if ok:
-                        st.success(msg)
-                    else:
-                        st.error(f"Email failed: {msg}")
+                    st.error(f"Email failed: {msg}. Ensure a local SMTP server is running on port 25.")
         except Exception as e:
             st.error(f"Report generation failed: {str(e)}")
 
-def email_config_page():
-    st.title("Email Configuration")
-    st.markdown("""
-    Configure your SMTP settings to enable email reports.  
-    **Common settings:**  
-    - **Gmail**: `smtp.gmail.com`, port `587`, TLS enabled, use your full email as username and an **[App Password](https://myaccount.google.com/apppasswords)** (not your regular password).  
-    - **Outlook**: `smtp-mail.outlook.com`, port `587`, TLS enabled.  
-    - **Yahoo**: `smtp.mail.yahoo.com`, port `587`, TLS enabled.
-    """)
-
-    config = get_email_config(st.session_state.user_id)
-    with st.form("email_config_form"):
-        col1, col2 = st.columns(2)
-        with col1:
-            smtp_server = st.text_input("SMTP Server", value=config['smtp_server'] if config else "smtp.gmail.com",
-                                        help="e.g., smtp.gmail.com")
-            smtp_username = st.text_input("SMTP Username", value=config['smtp_username'] if config else "",
-                                          help="Usually your full email address")
-            from_email = st.text_input("From Email", value=config['from_email'] if config else "",
-                                       help="The email address that will appear in the 'From' field")
-        with col2:
-            smtp_port = st.number_input("SMTP Port", value=config['smtp_port'] if config else 587, step=1,
-                                        help="Usually 587 for TLS, 465 for SSL")
-            smtp_password = st.text_input("SMTP Password", type="password", value=config.get('smtp_password', '') if config else "",
-                                          help="For Gmail, use an App Password")
-            use_tls = st.checkbox("Use TLS", value=config.get('use_tls', 1) if config else True,
-                                  help="Enable TLS for secure connection (recommended)")
-
-        if st.form_submit_button("Save Configuration", use_container_width=True):
-            save_email_config(st.session_state.user_id, smtp_server, smtp_port,
-                              smtp_username, smtp_password, from_email, use_tls)
-            st.success("Email configuration saved.")
-            st.rerun()
+# Email configuration page removed as requested
 
 def admin_dashboard_page():
     st.title("Admin Dashboard")
@@ -2080,26 +2030,6 @@ def admin_dashboard_page():
                 st.success("Settings saved.")
                 st.rerun()
 
-        st.divider()
-        st.subheader("Email Configuration (for your account)")
-        with st.expander("Configure Email"):
-            config = get_email_config(st.session_state.user_id)
-            with st.form("admin_email_form"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    smtp_server = st.text_input("SMTP Server", value=config['smtp_server'] if config else "smtp.gmail.com")
-                    smtp_username = st.text_input("SMTP Username", value=config['smtp_username'] if config else "")
-                    from_email = st.text_input("From Email", value=config['from_email'] if config else "")
-                with col2:
-                    smtp_port = st.number_input("SMTP Port", value=config['smtp_port'] if config else 587, step=1)
-                    smtp_password = st.text_input("SMTP Password", type="password", value=config.get('smtp_password', '') if config else "")
-                    use_tls = st.checkbox("Use TLS", value=config.get('use_tls', 1) if config else True)
-                if st.form_submit_button("Save Email Settings", use_container_width=True):
-                    save_email_config(st.session_state.user_id, smtp_server, smtp_port,
-                                      smtp_username, smtp_password, from_email, use_tls)
-                    st.success("Email settings saved.")
-                    st.rerun()
-
 # -----------------------------------------------------------------------------
 # Sidebar & Routing
 # -----------------------------------------------------------------------------
@@ -2140,14 +2070,12 @@ def render_sidebar():
             with cols[0]: st.button("Margins", use_container_width=True, on_click=change_page, args=("Profit Margins",))
             with cols[1]: st.button("Categories", use_container_width=True, on_click=change_page, args=("Expense Categories",))
             st.divider()
-            # Milestone 4 – Reports & Admin
+            # Milestone 4 – Reports & Admin (Email Settings removed)
             st.subheader("Reports & Admin")
             cols = st.columns(2)
             with cols[0]: st.button("Generate Report", use_container_width=True, on_click=change_page, args=("Generate Report",))
-            with cols[1]: st.button("Email Settings", use_container_width=True, on_click=change_page, args=("Email Config",))
             if is_admin():
-                cols = st.columns(2)
-                with cols[0]: st.button("Admin Dashboard", use_container_width=True, on_click=change_page, args=("Admin Dashboard",))
+                with cols[1]: st.button("Admin Dashboard", use_container_width=True, on_click=change_page, args=("Admin Dashboard",))
             st.divider()
             # Data & Profile
             st.subheader("Data")
@@ -2194,7 +2122,6 @@ def main():
     elif page == "Expense Categories" and logged: expense_categories_page()
     elif page == "Forecasting" and logged: forecasting_page()
     elif page == "Generate Report" and logged: report_generation_page()
-    elif page == "Email Config" and logged: email_config_page()
     elif page == "Admin Dashboard" and logged: admin_dashboard_page()
     else:
         st.session_state.page = "Home" if not logged else "Dashboard"
