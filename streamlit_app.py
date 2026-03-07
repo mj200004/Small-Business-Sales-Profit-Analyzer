@@ -91,6 +91,64 @@ def apply_custom_css():
             box-shadow: 0 8px 25px rgba(30,58,95,0.3);
         }
 
+        [data-testid="stSidebar"] {
+            background: rgba(255, 255, 255, 0.98) !important;
+            backdrop-filter: blur(20px);
+            border-right: 3px solid rgba(102, 126, 234, 0.5);
+            box-shadow: 4px 0 20px rgba(0,0,0,0.15);
+        }
+        
+        .stButton > button {
+            border-radius: 12px !important;
+            border: 2px solid transparent !important;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important;
+            padding: 0.75rem 1.5rem !important;
+            font-weight: 600 !important;
+            font-size: 1rem !important;
+            transition: all 0.3s ease !important;
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4) !important;
+        }
+        
+        .stButton > button:hover {
+            transform: translateY(-3px) !important;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.6) !important;
+            border-color: #ffffff !important;
+        }
+        
+        .stTextInput > div > div > input,
+        .stNumberInput > div > div > input,
+        .stTextArea > div > div > textarea {
+            background-color: #ffffff !important;
+            border: 3px solid #667eea !important;
+            border-radius: 10px !important;
+            padding: 0.75rem 1rem !important;
+            font-size: 1rem !important;
+            font-weight: 500 !important;
+            color: #2d3748 !important;
+        }
+        
+        .stTextInput > div > div > input:focus,
+        .stNumberInput > div > div > input:focus {
+            border-color: #764ba2 !important;
+            box-shadow: 0 0 0 3px rgba(118, 75, 162, 0.2) !important;
+        }
+        
+        .stSelectbox > div > div {
+            background-color: #ffffff !important;
+            border: 3px solid #667eea !important;
+            border-radius: 10px !important;
+            padding: 0.5rem 1rem !important;
+            font-weight: 600 !important;
+            min-height: 50px !important;
+        }
+        
+        .stSelectbox > div > div > div {
+            color: #2d3748 !important;
+            font-weight: 600 !important;
+        }
+
+
         div[data-testid="stMetric"] {
             background: rgba(255, 255, 255, 0.6);
             backdrop-filter: blur(8px);
@@ -894,7 +952,7 @@ def home_page():
 def login_page():
     st.title("Login")
     # Image removed as requested
-    with st.form("login_form"):
+    with st.form("login_form", clear_on_submit=False):
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
         if st.form_submit_button("Login", use_container_width=True):
@@ -910,18 +968,18 @@ def login_page():
 
 def signup_page():
     st.title("Sign Up")
-    with st.form("signup_form"):
+    with st.form("signup_form", clear_on_submit=False):
         nu = st.text_input("Username")
         em = st.text_input("Email")
         pw = st.text_input("Password", type="password")
         cf = st.text_input("Confirm Password", type="password")
         # Role selectbox – clearly visible due to enhanced CSS
-        role = st.selectbox("Role", ["Owner", "Accountant", "Staff"])
+        role = st.selectbox("Role", ["Owner", "Accountant", "Staff"], key="selectbox_1")
         if st.form_submit_button("Sign Up", use_container_width=True):
             if not nu or not em or not pw:
-                st.error("All fields required")
+                st.error("Please fill in all required fields.")
             elif pw != cf:
-                st.error("Passwords do not match")
+                st.error("Passwords do not match. Please re-enter.")
             else:
                 try:
                     hashed = hash_password(pw)
@@ -970,7 +1028,7 @@ def dashboard_page():
     if not biz.empty:
         opts = biz.set_index('id')['business_name'].to_dict()
         cur = st.session_state.active_business_id
-        sel = st.selectbox("Select business", options=list(opts.keys()), format_func=lambda x: opts[x],
+        sel = st.selectbox("Select business", options=list(opts.keys(, key="selectbox_2")), format_func=lambda x: opts[x],
                            index=list(opts.keys()).index(cur) if cur in opts else 0)
         if sel != cur:
             st.session_state.active_business_id = sel
@@ -984,7 +1042,7 @@ def dashboard_page():
 def businesses_page():
     st.title("My Businesses")
     with st.expander("Add New Business"):
-        with st.form("add_business_form"):
+        with st.form("add_business_form", clear_on_submit=False):
             name = st.text_input("Business Name *")
             typ = st.text_input("Type")
             addr = st.text_area("Address")
@@ -1055,10 +1113,10 @@ def add_transaction_page():
             st.session_state.page = "Businesses"
             st.rerun()
         return
-    with st.form("transaction_form"):
-        typ = st.selectbox("Type", ["Sales", "Expense"])
+    with st.form("transaction_form", clear_on_submit=False):
+        typ = st.selectbox("Type", ["Sales", "Expense"], key="trans_type")
         # FIXED: amount starts at 0.0, step 1.0, format allows decimals
-        amt = st.number_input(f"Amount ({st.session_state.currency_symbol})", min_value=0.0, step=1.0, format="%.2f")
+        amt = st.number_input(f"Amount ({st.session_state.currency_symbol})", min_value=0.01, value=1.01, value=0.01, step=1.0, format="%.2f", key="amount_input")
         cat = st.text_input("Category")
         desc = st.text_area("Description")
         tdate = st.date_input("Date", datetime.now().date())
@@ -1127,7 +1185,7 @@ def import_transactions_page():
     typ_col = st.selectbox("Type column", ["None"]+cols, key="typ")
     cat_col = st.selectbox("Category column", ["None"]+cols, key="cat")
     desc_col = st.selectbox("Description column", ["None"]+cols, key="desc")
-    default_type = st.selectbox("Default type", ["Sales","Expense"])
+    default_type = st.selectbox("Default type", ["Sales","Expense"], key="selectbox_8")
 
     if amt_col != "None" and st.button("IMPORT", type="primary"):
         success = 0
@@ -1275,10 +1333,10 @@ def analyze_data_page():
             if not num_cols:
                 st.warning("No numeric columns to visualize.")
             else:
-                chart_type = st.selectbox("Chart type", ["Bar", "Line", "Scatter", "Histogram", "Pie"])
+                chart_type = st.selectbox("Chart type", ["Bar", "Line", "Scatter", "Histogram", "Pie"], key="selectbox_9")
                 if chart_type == "Bar":
-                    x_col = st.selectbox("X-axis (categorical)", df.columns)
-                    y_col = st.selectbox("Y-axis (numeric)", num_cols)
+                    x_col = st.selectbox("X-axis (categorical, key="selectbox_10")", df.columns)
+                    y_col = st.selectbox("Y-axis (numeric, key="selectbox_11")", num_cols)
                     if x_col and y_col:
                         agg_df = df.groupby(x_col)[y_col].sum().reset_index()
                         colors = get_color_sequence(len(agg_df), 'Set2')
@@ -1288,8 +1346,8 @@ def analyze_data_page():
                         st.plotly_chart(fig, use_container_width=True)
 
                 elif chart_type == "Line":
-                    x_col = st.selectbox("X-axis (date/numeric)", df.columns)
-                    y_col = st.selectbox("Y-axis (numeric)", num_cols)
+                    x_col = st.selectbox("X-axis (date/numeric, key="selectbox_12")", df.columns)
+                    y_col = st.selectbox("Y-axis (numeric, key="selectbox_13")", num_cols)
                     if x_col and y_col:
                         plot_df = df[[x_col, y_col]].dropna().copy()
                         try:
@@ -1303,9 +1361,9 @@ def analyze_data_page():
 
                 elif chart_type == "Scatter":
                     if len(num_cols) >= 2:
-                        x_col = st.selectbox("X-axis", num_cols)
-                        y_col = st.selectbox("Y-axis", num_cols)
-                        color_col = st.selectbox("Color by (optional)", ["None"] + df.columns.tolist())
+                        x_col = st.selectbox("X-axis", num_cols, key="selectbox_14")
+                        y_col = st.selectbox("Y-axis", num_cols, key="selectbox_15")
+                        color_col = st.selectbox("Color by (optional, key="selectbox_16")", ["None"] + df.columns.tolist())
                         if x_col and y_col:
                             if color_col != "None":
                                 fig = px.scatter(df, x=x_col, y=y_col, color=color_col,
@@ -1318,7 +1376,7 @@ def analyze_data_page():
                         st.warning("Need at least two numeric columns for scatter plot.")
 
                 elif chart_type == "Histogram":
-                    col = st.selectbox("Column", num_cols)
+                    col = st.selectbox("Column", num_cols, key="selectbox_17")
                     if col:
                         fig = px.histogram(df, x=col, nbins=20,
                                            title=f"Distribution of {col}")
@@ -1327,8 +1385,8 @@ def analyze_data_page():
                 elif chart_type == "Pie":
                     cat_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
                     if cat_cols:
-                        cat = st.selectbox("Category column", cat_cols)
-                        num = st.selectbox("Numeric column (sum)", num_cols)
+                        cat = st.selectbox("Category column", cat_cols, key="selectbox_18")
+                        num = st.selectbox("Numeric column (sum, key="selectbox_19")", num_cols)
                         if cat and num:
                             pie_df = df.groupby(cat)[num].sum().reset_index()
                             colors = get_color_sequence(len(pie_df), 'Pastel')
@@ -1361,13 +1419,13 @@ def profile_page():
             st.write(f"**Member since:** {user['created_at']}")
 
     st.divider()
-    with st.form("update_profile"):
+    with st.form("update_profile", clear_on_submit=False):
         new_email = st.text_input("New Email", user['email'])
         new_pw = st.text_input("New Password", type="password")
         confirm = st.text_input("Confirm Password", type="password")
         if st.form_submit_button("Update Profile", use_container_width=True):
             if new_pw and new_pw != confirm:
-                st.error("Passwords do not match")
+                st.error("Passwords do not match. Please re-enter.")
             else:
                 with get_user_db() as conn:
                     if new_pw:
@@ -1379,7 +1437,7 @@ def profile_page():
                 st.rerun()
 
     st.divider()
-    with st.form("delete_account"):
+    with st.form("delete_account", clear_on_submit=False):
         st.warning("Deleting your account is irreversible. All your data will be permanently removed.")
         confirm = st.checkbox("I understand the consequences")
         if st.form_submit_button("Delete My Account", use_container_width=True) and confirm:
@@ -1473,14 +1531,14 @@ def inventory_management_page():
             prods['stock_value'] = prods['stock_value'].apply(lambda x: f"{st.session_state.currency_symbol}{x:,.2f}")
             st.dataframe(prods)
     with tabs[1]:
-        with st.form("add_product"):
+        with st.form("add_product", clear_on_submit=False):
             name = st.text_input("Product Name *")
             sku = st.text_input("SKU (unique identifier)")
             qty = st.number_input("Initial Quantity", 0.0, step=1.0)
             cost = st.number_input("Cost Price *", 0.0, step=1.0)
             price = st.number_input("Selling Price *", 0.0, step=1.0)
             reorder = st.number_input("Reorder Level", 0.0, step=1.0, value=st.session_state.default_reorder_level)
-            cat = st.selectbox("Category", ["Electronics", "Clothing", "Food", "Furniture", "Other"])
+            cat = st.selectbox("Category", ["Electronics", "Clothing", "Food", "Furniture", "Other"], key="selectbox_20")
             if st.form_submit_button("Add Product", use_container_width=True):
                 if name and cost > 0 and price > 0:
                     ok, msg = add_product(st.session_state.user_id, st.session_state.active_business_id,
@@ -1499,12 +1557,12 @@ def inventory_management_page():
         if plist.empty:
             st.warning("Add products first")
         else:
-            with st.form("movement"):
-                pid = st.selectbox("Product", plist['id'].tolist(),
+            with st.form("movement", clear_on_submit=False):
+                pid = st.selectbox("Product", plist['id'].tolist(, key="selectbox_21"),
                                    format_func=lambda x: plist[plist['id']==x]['product_name'].iloc[0])
                 cur_qty = plist[plist['id']==pid]['quantity'].iloc[0]
                 st.info(f"Current stock: {cur_qty:,.2f}")
-                move = st.selectbox("Movement Type", ["purchase", "sale", "adjustment"])
+                move = st.selectbox("Movement Type", ["purchase", "sale", "adjustment"], key="selectbox_22")
                 mqty = st.number_input("Quantity", 0.0, step=1.0)
                 unit_cost = st.number_input("Unit Cost (if purchase)", 0.0, step=1.0)
                 unit_price = st.number_input("Unit Price (if sale)", 0.0, step=1.0)
@@ -1604,7 +1662,7 @@ def sales_trends_page():
         return
     df['date'] = pd.to_datetime(df['date'])
     st.info(f"Records: {len(df)} from {df['date'].min().date()} to {df['date'].max().date()}")
-    period = st.radio("View", ["Daily", "Weekly", "Monthly"], horizontal=True)
+    period = st.radio("View", ["Daily", "Weekly", "Monthly"], horizontal=True, key="view_period")
     freq = {"Daily": "D", "Weekly": "W", "Monthly": "M"}[period]
     grouped = df.set_index('date').resample(freq).sum().reset_index()
     fig = px.line(grouped, x='date', y='amount', title=f"Sales ({period})", markers=True,
@@ -1636,7 +1694,7 @@ def profit_margins_page():
     pivot['Profit'] = pivot['Sales'] - pivot['Expense']
     pivot['Margin'] = (pivot['Profit'] / pivot['Sales'] * 100).replace([np.inf, -np.inf], 0).fillna(0)
 
-    period = st.radio("Resample", ["Daily", "Weekly", "Monthly"], horizontal=True)
+    period = st.radio("Resample", ["Daily", "Weekly", "Monthly"], horizontal=True, key="radio_2")
     freq = {"Daily": "D", "Weekly": "W", "Monthly": "M"}[period]
     res = pivot.resample(freq).sum().reset_index()
 
@@ -1668,7 +1726,7 @@ def expense_categories_page():
     if not st.session_state.active_business_id:
         st.warning("Select active business")
         return
-    period = st.selectbox("Period", ["All time", "Last 30 days", "Last 7 days", "This year"])
+    period = st.selectbox("Period", ["All time", "Last 30 days", "Last 7 days", "This year"], key="selectbox_23")
     pmap = {"All time": None, "Last 30 days": "month", "Last 7 days": "week", "This year": "year"}
 
     df_exp = get_expense_by_category(st.session_state.user_id, st.session_state.active_business_id, pmap[period])
@@ -1734,8 +1792,8 @@ def forecasting_page():
             else:
                 st.error(f"**{lab}**: {cnt} X (need ≥3)")
 
-    target = st.radio("Forecast", ["Sales", "Profit"], horizontal=True)
-    freq_opt = st.selectbox("Frequency", freq_labels, index=2)
+    target = st.radio("Forecast", ["Sales", "Profit"], horizontal=True, key="radio_3")
+    freq_opt = st.selectbox("Frequency", freq_labels, index=2, key="selectbox_24")
     freq = freq_codes[freq_labels.index(freq_opt)]
     if freq == 'D':
         periods = st.slider("Horizon (days)", 7, 90, 30)
@@ -1803,14 +1861,14 @@ def report_generation_page():
         st.warning("Select an active business first.")
         return
 
-    with st.form("report_form"):
+    with st.form("report_form", clear_on_submit=False):
         col1, col2 = st.columns(2)
         with col1:
             start_date = st.date_input("Start Date", datetime.now().date() - timedelta(days=30))
         with col2:
             end_date = st.date_input("End Date", datetime.now().date())
 
-        report_type = st.radio("Report Format", ["Excel", "PDF"], horizontal=True)
+        report_type = st.radio("Report Format", ["Excel", "PDF"], horizontal=True, key="radio_4")
         include_inventory = st.checkbox("Include Inventory Data", value=True)
 
         send_email = st.checkbox("Send report via email")
@@ -1971,7 +2029,7 @@ def admin_dashboard_page():
     with tab3:
         st.subheader("System Settings")
 
-        with st.form("system_settings_form"):
+        with st.form("system_settings_form", clear_on_submit=False):
             currency = st.text_input("Currency Symbol", value=st.session_state.currency_symbol,
                                      help="Symbol used for monetary values (e.g., ₹, $, €)")
             default_reorder = st.number_input("Default Reorder Level", value=st.session_state.default_reorder_level,
