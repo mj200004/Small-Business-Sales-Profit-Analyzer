@@ -290,8 +290,9 @@ For issues, questions, or feature requests, please refer to the project document
 - PDF generation by FPDF2
 
 ---
-```
+
 LIVE PAGE
+```
 small-business-sales-profit-analyzer ∙ main ∙ streamlit_app.py
 ```
 **Last Updated**: 2026 
