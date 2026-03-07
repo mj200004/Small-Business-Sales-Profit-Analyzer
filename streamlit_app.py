@@ -1,7 +1,7 @@
 """
 Business Analyzer – All Milestones (1,2,3,4)
 --------------------------------------------
-Refactored version with clear modular structure.
+Refactored version with clean, unstyled interface.
 """
 
 import streamlit as st
@@ -44,36 +44,6 @@ class Config:
     BUSINESS_DB = os.path.join(BASE_DIR, 'BUSINESS.db')
     SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'your-secret-key-change-in-production')
     JWT_ALGORITHM = 'HS256'
-
-# -----------------------------------------------------------------------------
-# Custom CSS
-# -----------------------------------------------------------------------------
-def apply_custom_css():
-    st.markdown("""
-        <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        * { font-family: 'Inter', sans-serif !important; }
-        .stApp { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-        [data-testid="stSidebar"] { background: rgba(255, 255, 255, 0.95) !important; }
-        [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { color: #1a1a1a !important; }
-        h1, h2, h3 { color: #ffffff !important; font-weight: 700 !important; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); padding: 1rem; background: rgba(255,255,255,0.15); border-radius: 12px; }
-        .stButton > button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; color: white !important; border: none !important; border-radius: 10px !important; padding: 0.75rem 2rem !important; font-weight: 600 !important; }
-        .stButton > button:hover { transform: translateY(-2px) !important; box-shadow: 0 8px 20px rgba(0,0,0,0.3) !important; }
-        label { color: #1a1a1a !important; font-weight: 600 !important; background: rgba(255,255,255,0.9) !important; padding: 0.5rem !important; border-radius: 8px !important; display: inline-block !important; margin-bottom: 0.5rem !important; }
-        input, textarea { background-color: #ffffff !important; border: 2px solid #667eea !important; border-radius: 8px !important; padding: 0.75rem !important; color: #000000 !important; font-weight: 500 !important; }
-        [data-baseweb="select"] { background-color: #ffffff !important; border: 3px solid #667eea !important; border-radius: 8px !important; }
-        [data-baseweb="select"] * { color: #000000 !important; }
-        [role="listbox"] { background-color: #ffffff !important; border: 2px solid #667eea !important; }
-        [role="option"] { background-color: #ffffff !important; color: #000000 !important; font-weight: 600 !important; }
-        [role="option"]:hover { background-color: #667eea !important; color: #ffffff !important; }
-        [data-testid="stRadio"] > div { background: rgba(255,255,255,0.9); padding: 1rem; border-radius: 10px; }
-        [data-testid="stMetric"] { background: rgba(255,255,255,0.95); border-radius: 15px; padding: 1.5rem; box-shadow: 0 8px 20px rgba(0,0,0,0.15); }
-        .stDataFrame { background: rgba(255,255,255,0.95) !important; border-radius: 10px !important; }
-        .stTabs [data-baseweb="tab-list"] { background: rgba(255,255,255,0.2); padding: 0.5rem; border-radius: 10px; }
-        .stTabs [data-baseweb="tab"] { color: #ffffff !important; font-weight: 600 !important; }
-        .stSuccess, .stError, .stWarning, .stInfo { border-radius: 10px !important; padding: 1rem !important; font-weight: 600 !important; }
-        </style>
-    """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
 # Database Manager
@@ -762,7 +732,7 @@ class Admin:
         return merged[['username', 'tx_count']]
 
 # -----------------------------------------------------------------------------
-# UI Helpers
+# UI Helpers (minimal)
 # -----------------------------------------------------------------------------
 def get_color_sequence(n, palette='Plotly'):
     palettes = {
@@ -781,7 +751,7 @@ def show_metric_row(metrics):
         col.metric(label, value, delta)
 
 # -----------------------------------------------------------------------------
-# Page Functions
+# Page Functions (unchanged)
 # -----------------------------------------------------------------------------
 def page_home():
     st.title("Business Analyzer")
@@ -1909,7 +1879,6 @@ def main():
         page_icon="📊",
         initial_sidebar_state="expanded"
     )
-    apply_custom_css()
     DBManager.init_user_db()
     DBManager.init_business_db()
     init_session()
