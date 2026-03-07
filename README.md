@@ -290,7 +290,9 @@ For issues, questions, or feature requests, please refer to the project document
 - PDF generation by FPDF2
 
 ---
-
-**Version**: 4.0 (All Milestones Complete)  
-**Last Updated**: 2024  
-**Author**: Final Year Project Team
+```
+LIVE PAGE
+small-business-sales-profit-analyzer ∙ main ∙ streamlit_app.py
+```
+**Last Updated**: 2026 
+**Author**: Moupriyo Jana (Infosys Springboard Intern)
