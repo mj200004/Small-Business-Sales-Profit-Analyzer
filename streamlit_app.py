@@ -1028,8 +1028,8 @@ def dashboard_page():
     if not biz.empty:
         opts = biz.set_index('id')['business_name'].to_dict()
         cur = st.session_state.active_business_id
-        sel = st.selectbox("Select business", options=list(opts.keys(, key="selectbox_2")), format_func=lambda x: opts[x],
-                           index=list(opts.keys()).index(cur) if cur in opts else 0)
+        sel = st.selectbox("Select business", options=list(opts.keys()), format_func=lambda x: opts[x],
+                           index=list(opts.keys()).index(cur) if cur in opts else 0, key="selectbox_active_business")
         if sel != cur:
             st.session_state.active_business_id = sel
             with get_business_db() as conn:
@@ -1116,7 +1116,7 @@ def add_transaction_page():
     with st.form("transaction_form", clear_on_submit=False):
         typ = st.selectbox("Type", ["Sales", "Expense"], key="trans_type")
         # FIXED: amount starts at 0.0, step 1.0, format allows decimals
-        amt = st.number_input(f"Amount ({st.session_state.currency_symbol})", min_value=0.01, value=1.01, value=0.01, step=1.0, format="%.2f", key="amount_input")
+        amt = st.number_input(f"Amount ({st.session_state.currency_symbol})", min_value=0.01, value=1.0, step=1.0, format="%.2f", key="amount_input")
         cat = st.text_input("Category")
         desc = st.text_area("Description")
         tdate = st.date_input("Date", datetime.now().date())
@@ -1335,8 +1335,8 @@ def analyze_data_page():
             else:
                 chart_type = st.selectbox("Chart type", ["Bar", "Line", "Scatter", "Histogram", "Pie"], key="selectbox_9")
                 if chart_type == "Bar":
-                    x_col = st.selectbox("X-axis (categorical, key="selectbox_10")", df.columns)
-                    y_col = st.selectbox("Y-axis (numeric, key="selectbox_11")", num_cols)
+                    x_col = st.selectbox("X-axis (categorical)", df.columns, key="selectbox_10")
+                    y_col = st.selectbox("Y-axis (numeric)", num_cols, key="selectbox_11")
                     if x_col and y_col:
                         agg_df = df.groupby(x_col)[y_col].sum().reset_index()
                         colors = get_color_sequence(len(agg_df), 'Set2')
@@ -1346,8 +1346,8 @@ def analyze_data_page():
                         st.plotly_chart(fig, use_container_width=True)
 
                 elif chart_type == "Line":
-                    x_col = st.selectbox("X-axis (date/numeric, key="selectbox_12")", df.columns)
-                    y_col = st.selectbox("Y-axis (numeric, key="selectbox_13")", num_cols)
+                    x_col = st.selectbox("X-axis (date/numeric)", df.columns, key="selectbox_12")
+                    y_col = st.selectbox("Y-axis (numeric)", num_cols, key="selectbox_13")
                     if x_col and y_col:
                         plot_df = df[[x_col, y_col]].dropna().copy()
                         try:
@@ -1363,7 +1363,7 @@ def analyze_data_page():
                     if len(num_cols) >= 2:
                         x_col = st.selectbox("X-axis", num_cols, key="selectbox_14")
                         y_col = st.selectbox("Y-axis", num_cols, key="selectbox_15")
-                        color_col = st.selectbox("Color by (optional, key="selectbox_16")", ["None"] + df.columns.tolist())
+                        color_col = st.selectbox("Color by (optional)", ["None"] + df.columns.tolist(), key="selectbox_16")
                         if x_col and y_col:
                             if color_col != "None":
                                 fig = px.scatter(df, x=x_col, y=y_col, color=color_col,
@@ -1386,7 +1386,7 @@ def analyze_data_page():
                     cat_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
                     if cat_cols:
                         cat = st.selectbox("Category column", cat_cols, key="selectbox_18")
-                        num = st.selectbox("Numeric column (sum, key="selectbox_19")", num_cols)
+                        num = st.selectbox("Numeric column (sum)", num_cols, key="selectbox_19")
                         if cat and num:
                             pie_df = df.groupby(cat)[num].sum().reset_index()
                             colors = get_color_sequence(len(pie_df), 'Pastel')
@@ -1558,8 +1558,8 @@ def inventory_management_page():
             st.warning("Add products first")
         else:
             with st.form("movement", clear_on_submit=False):
-                pid = st.selectbox("Product", plist['id'].tolist(, key="selectbox_21"),
-                                   format_func=lambda x: plist[plist['id']==x]['product_name'].iloc[0])
+                pid = st.selectbox("Product", plist['id'].tolist(),
+                                   format_func=lambda x: plist[plist['id']==x]['product_name'].iloc[0], key="selectbox_21")
                 cur_qty = plist[plist['id']==pid]['quantity'].iloc[0]
                 st.info(f"Current stock: {cur_qty:,.2f}")
                 move = st.selectbox("Movement Type", ["purchase", "sale", "adjustment"], key="selectbox_22")
