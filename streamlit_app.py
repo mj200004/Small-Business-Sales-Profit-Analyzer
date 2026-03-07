@@ -74,6 +74,21 @@ def apply_custom_css():
         [data-testid="stSidebar"] {
             background: rgba(255, 255, 255, 0.95) !important;
         }
+        
+        /* Sidebar title - BLACK not white */
+        [data-testid="stSidebar"] h1 {
+            color: #1a1a1a !important;
+            background: transparent !important;
+            text-shadow: none !important;
+        }
+        
+        /* Sidebar subheaders - BLACK */
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3 {
+            color: #1a1a1a !important;
+            background: transparent !important;
+            text-shadow: none !important;
+        }
 
         /* Headers */
         h1, h2, h3 {
@@ -136,7 +151,7 @@ def apply_custom_css():
             border-radius: 8px !important;
         }
         
-        /* Selected value text - MUST BE BLACK */
+        /* Selected value text - MUST BE BLACK AND VISIBLE */
         [data-baseweb="select"] > div {
             background-color: #ffffff !important;
             color: #000000 !important;
@@ -145,10 +160,21 @@ def apply_custom_css():
             padding: 0.75rem !important;
         }
         
-        /* All text inside selectbox */
+        /* All text inside selectbox - FORCE BLACK */
         [data-baseweb="select"] * {
             color: #000000 !important;
-            background-color: transparent !important;
+        }
+        
+        /* The actual selected value span */
+        [data-baseweb="select"] span {
+            color: #000000 !important;
+            font-weight: 700 !important;
+        }
+        
+        /* Input element inside selectbox */
+        [data-baseweb="select"] input {
+            color: #000000 !important;
+            font-weight: 700 !important;
         }
         
         /* Dropdown arrow */
@@ -2121,7 +2147,17 @@ def render_sidebar():
             st.button("Sign Up", use_container_width=True, on_click=change_page, args=("Sign Up",))
 
 def main():
-    st.set_page_config(layout="wide", page_title="Business Analyzer")
+    st.set_page_config(
+        layout="wide", 
+        page_title="Business Analyzer",
+        page_icon="📊",
+        initial_sidebar_state="expanded"
+    )
+    
+    # Clear any unwanted session state
+    if 'keyboard_double' in st.session_state:
+        del st.session_state['keyboard_double']
+    
     apply_custom_css()
     init_user_db()
     init_business_db()
