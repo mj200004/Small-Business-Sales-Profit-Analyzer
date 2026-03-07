@@ -54,450 +54,220 @@ SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'your-secret-key-change-in-product
 JWT_ALGORITHM = 'HS256'
 
 # -----------------------------------------------------------------------------
-# Enhanced CSS with highly visible select boxes and modern design
+# SIMPLE AND EFFECTIVE CSS - SELECTBOX FIX
 # -----------------------------------------------------------------------------
 def apply_custom_css():
     st.markdown("""
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         
-        html, body, [class*="css"] { 
-            font-family: 'Poppins', sans-serif !important;
+        * {
+            font-family: 'Inter', sans-serif !important;
         }
         
+        /* Main App Background */
         .stApp { 
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            background-attachment: fixed;
         }
 
+        /* Sidebar */
         [data-testid="stSidebar"] {
-            background: rgba(255, 255, 255, 0.98) !important;
-            backdrop-filter: blur(20px);
-            border-right: 3px solid rgba(102, 126, 234, 0.5);
-            box-shadow: 4px 0 20px rgba(0,0,0,0.15);
+            background: rgba(255, 255, 255, 0.95) !important;
         }
 
+        /* Headers */
         h1, h2, h3 {
             color: #ffffff !important;
             font-weight: 700 !important;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
             padding: 1rem;
-            background: rgba(255,255,255,0.1);
-            border-radius: 15px;
-            border-left: 5px solid #ffd700;
+            background: rgba(255,255,255,0.15);
+            border-radius: 12px;
         }
 
+        /* Buttons */
         .stButton > button {
-            border-radius: 12px !important;
-            border: 2px solid transparent !important;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important;
-            padding: 0.75rem 1.5rem !important;
+            border: none !important;
+            border-radius: 10px !important;
+            padding: 0.75rem 2rem !important;
             font-weight: 600 !important;
-            font-size: 1.05rem !important;
-            transition: all 0.3s ease !important;
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4) !important;
+            font-size: 1rem !important;
         }
         
         .stButton > button:hover {
-            transform: translateY(-3px) scale(1.02) !important;
-            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.6) !important;
-            border-color: #ffffff !important;
+            transform: translateY(-2px) !important;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.3) !important;
         }
         
-        /* Input Fields - Highly Visible */
-        .stTextInput > div > div > input,
-        .stNumberInput > div > div > input,
-        .stTextArea > div > div > textarea,
-        .stDateInput > div > div > input {
+        /* ALL INPUT LABELS - NO WHITE COLOR */
+        label {
+            color: #1a1a1a !important;
+            font-weight: 600 !important;
+            font-size: 1rem !important;
+            background: rgba(255,255,255,0.9) !important;
+            padding: 0.5rem !important;
+            border-radius: 8px !important;
+            display: inline-block !important;
+            margin-bottom: 0.5rem !important;
+        }
+        
+        /* Text Inputs */
+        input[type="text"],
+        input[type="email"],
+        input[type="password"],
+        input[type="number"],
+        textarea {
+            background-color: #ffffff !important;
+            border: 2px solid #667eea !important;
+            border-radius: 8px !important;
+            padding: 0.75rem !important;
+            font-size: 1rem !important;
+            color: #000000 !important;
+            font-weight: 500 !important;
+        }
+        
+        /* SELECTBOX - CRITICAL FIX */
+        /* Container */
+        [data-baseweb="select"] {
             background-color: #ffffff !important;
             border: 3px solid #667eea !important;
-            border-radius: 12px !important;
-            padding: 0.85rem 1.2rem !important;
-            font-size: 1.05rem !important;
-            font-weight: 600 !important;
-            color: #1a202c !important;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+            border-radius: 8px !important;
         }
         
-        .stTextInput > div > div > input:focus,
-        .stNumberInput > div > div > input:focus,
-        .stTextArea > div > div > textarea:focus {
-            border-color: #764ba2 !important;
-            box-shadow: 0 0 0 4px rgba(118, 75, 162, 0.25) !important;
-            transform: scale(1.01);
-        }
-        
-        /* Labels - Bold and Clear */
-        .stTextInput > label,
-        .stNumberInput > label,
-        .stSelectbox > label,
-        .stDateInput > label,
-        .stTextArea > label,
-        .stRadio > label {
+        /* Selected value text - MUST BE BLACK */
+        [data-baseweb="select"] > div {
+            background-color: #ffffff !important;
+            color: #000000 !important;
             font-weight: 700 !important;
-            color: #ffffff !important;
-            font-size: 1.15rem !important;
-            text-shadow: 1px 1px 3px rgba(0,0,0,0.3);
-            margin-bottom: 0.75rem !important;
-            display: block !important;
-        }
-        
-        /* SELECT BOX - CRITICAL FIX FOR VISIBILITY */
-        .stSelectbox {
-            margin-bottom: 1.5rem;
-        }
-        
-        /* Selectbox container - white background with thick border */
-        .stSelectbox > div > div,
-        .stSelectbox [data-baseweb="select"],
-        .stSelectbox [data-baseweb="select"] > div {
-            background-color: #ffffff !important;
-            border: 4px solid #667eea !important;
-            border-radius: 12px !important;
-            padding: 0.85rem 1.2rem !important;
-            min-height: 55px !important;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
-            cursor: pointer !important;
-        }
-        
-        .stSelectbox > div > div:hover,
-        .stSelectbox [data-baseweb="select"]:hover {
-            border-color: #764ba2 !important;
-            box-shadow: 0 6px 16px rgba(118, 75, 162, 0.3) !important;
-            transform: scale(1.01);
-        }
-        
-        /* Selected option text - MAXIMUM VISIBILITY */
-        .stSelectbox > div > div > div,
-        .stSelectbox [data-baseweb="select"] > div,
-        .stSelectbox [data-baseweb="select"] span,
-        .stSelectbox div[role="button"] > div,
-        .stSelectbox div[role="button"] span {
-            color: #1a202c !important;
-            font-weight: 800 !important;
-            font-size: 1.15rem !important;
-            line-height: 1.6 !important;
-            text-shadow: none !important;
-        }
-        
-        /* Force text visibility in all selectbox states */
-        .stSelectbox * {
-            color: #1a202c !important;
-        }
-        
-        /* Dropdown arrow - Larger and more visible */
-        .stSelectbox svg,
-        .stSelectbox [data-baseweb="select"] svg {
-            fill: #667eea !important;
-            width: 30px !important;
-            height: 30px !important;
-            min-width: 30px !important;
-            min-height: 30px !important;
-        }
-        
-        /* Dropdown menu styling */
-        div[data-baseweb="popover"],
-        ul[role="listbox"] {
-            border-radius: 12px !important;
-            border: 3px solid #667eea !important;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2) !important;
-            background-color: #ffffff !important;
-        }
-        
-        /* Dropdown options - clear and visible */
-        div[role="option"],
-        li[role="option"] {
-            padding: 1rem 1.5rem !important;
             font-size: 1.1rem !important;
-            font-weight: 600 !important;
-            color: #1a202c !important;
-            cursor: pointer !important;
-            background-color: #ffffff !important;
+            padding: 0.75rem !important;
         }
         
-        div[role="option"]:hover,
-        li[role="option"]:hover {
+        /* All text inside selectbox */
+        [data-baseweb="select"] * {
+            color: #000000 !important;
+            background-color: transparent !important;
+        }
+        
+        /* Dropdown arrow */
+        [data-baseweb="select"] svg {
+            fill: #000000 !important;
+        }
+        
+        /* Dropdown menu */
+        [role="listbox"] {
+            background-color: #ffffff !important;
+            border: 2px solid #667eea !important;
+            border-radius: 8px !important;
+        }
+        
+        /* Dropdown options */
+        [role="option"] {
+            background-color: #ffffff !important;
+            color: #000000 !important;
+            font-weight: 600 !important;
+            font-size: 1rem !important;
+            padding: 0.75rem 1rem !important;
+        }
+        
+        [role="option"]:hover {
             background-color: #667eea !important;
             color: #ffffff !important;
         }
         
-        /* Selected option in dropdown - highly visible */
-        div[role="option"][aria-selected="true"],
-        li[role="option"][aria-selected="true"] {
+        [role="option"][aria-selected="true"] {
             background-color: #764ba2 !important;
             color: #ffffff !important;
-            font-weight: 800 !important;
+            font-weight: 700 !important;
         }
         
-        /* Additional specificity for stubborn Streamlit defaults */
-        [data-testid="stSelectbox"] > div > div,
-        [data-testid="stSelectbox"] [data-baseweb="select"] {
-            background: #ffffff !important;
-        }
-        
-        [data-testid="stSelectbox"] * {
-            color: #1a202c !important;
-        }
-        
-        /* Radio Buttons - Clear and Visible */
-        .stRadio > div {
-            background: rgba(255,255,255,0.15);
+        /* Radio Buttons */
+        [data-testid="stRadio"] > div {
+            background: rgba(255,255,255,0.9);
             padding: 1rem;
-            border-radius: 12px;
-            backdrop-filter: blur(10px);
+            border-radius: 10px;
         }
         
-        .stRadio > div > label {
-            background: rgba(255,255,255,0.95) !important;
-            padding: 0.85rem 1.5rem !important;
-            border-radius: 10px !important;
-            margin: 0.35rem !important;
+        [data-testid="stRadio"] label {
+            color: #1a1a1a !important;
             font-weight: 600 !important;
-            color: #1a202c !important;
-            border: 3px solid transparent !important;
-            transition: all 0.3s ease !important;
-            cursor: pointer !important;
-        }
-        
-        .stRadio > div > label:hover {
-            background: #ffffff !important;
-            border-color: #667eea !important;
-            transform: scale(1.05);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        }
-        
-        .stRadio > div > label[data-baseweb="radio"] > div:first-child {
-            background-color: #667eea !important;
-            border-color: #667eea !important;
         }
 
-        /* Metrics Cards */
-        div[data-testid="stMetric"] {
-            background: linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.85) 100%);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 2rem 1.5rem;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
-            border: 2px solid rgba(255,255,255,0.5);
-            transition: all 0.3s ease;
-        }
-        
-        div[data-testid="stMetric"]:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 15px 50px rgba(0,0,0,0.2);
+        /* Metrics */
+        [data-testid="stMetric"] {
+            background: rgba(255,255,255,0.95);
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
         }
         
         [data-testid="stMetricLabel"] {
-            font-size: 1.05rem !important;
-            font-weight: 700 !important;
             color: #667eea !important;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            font-weight: 700 !important;
         }
         
         [data-testid="stMetricValue"] {
-            font-size: 2.5rem !important;
+            color: #1a1a1a !important;
             font-weight: 800 !important;
-            color: #1a202c !important;
         }
 
-        /* Data Tables */
+        /* Tables */
         .stDataFrame {
-            border: none !important;
-            border-radius: 15px !important;
-            overflow: hidden !important;
-            box-shadow: 0 8px 30px rgba(0,0,0,0.15) !important;
-        }
-        
-        .stDataFrame > div {
             background: rgba(255,255,255,0.95) !important;
+            border-radius: 10px !important;
         }
 
         /* Tabs */
         .stTabs [data-baseweb="tab-list"] {
-            gap: 10px;
             background: rgba(255,255,255,0.2);
-            backdrop-filter: blur(10px);
-            padding: 8px;
-            border-radius: 15px;
+            padding: 0.5rem;
+            border-radius: 10px;
         }
         
         .stTabs [data-baseweb="tab"] {
-            border-radius: 12px;
-            padding: 12px 24px;
-            background: transparent;
-            font-weight: 600;
-            font-size: 1.05rem;
-            color: #ffffff;
-            transition: all 0.3s ease;
-        }
-        
-        .stTabs [data-baseweb="tab"]:hover {
-            background: rgba(255,255,255,0.2);
+            color: #ffffff !important;
+            font-weight: 600 !important;
         }
         
         .stTabs [aria-selected="true"] {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
         }
 
-        /* Success/Error/Warning Messages */
-        .stSuccess {
-            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%) !important;
-            color: white !important;
-            border-radius: 12px !important;
-            padding: 1rem 1.5rem !important;
+        /* Messages */
+        .stSuccess, .stError, .stWarning, .stInfo {
+            border-radius: 10px !important;
+            padding: 1rem !important;
             font-weight: 600 !important;
-            font-size: 1.05rem !important;
-            box-shadow: 0 4px 15px rgba(56, 239, 125, 0.3);
-        }
-        
-        .stError {
-            background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%) !important;
-            color: white !important;
-            border-radius: 12px !important;
-            padding: 1rem 1.5rem !important;
-            font-weight: 600 !important;
-            font-size: 1.05rem !important;
-            box-shadow: 0 4px 15px rgba(235, 51, 73, 0.3);
-        }
-        
-        .stWarning {
-            background: linear-gradient(135deg, #f2994a 0%, #f2c94c 100%) !important;
-            color: white !important;
-            border-radius: 12px !important;
-            padding: 1rem 1.5rem !important;
-            font-weight: 600 !important;
-            font-size: 1.05rem !important;
-            box-shadow: 0 4px 15px rgba(242, 153, 74, 0.3);
-        }
-        
-        .stInfo {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%) !important;
-            color: white !important;
-            border-radius: 12px !important;
-            padding: 1rem 1.5rem !important;
-            font-weight: 600 !important;
-            font-size: 1.05rem !important;
-            box-shadow: 0 4px 15px rgba(79, 172, 254, 0.3);
         }
 
         /* Expander */
         .streamlit-expanderHeader {
             background: rgba(255,255,255,0.95) !important;
-            border-radius: 12px !important;
-            padding: 1.2rem !important;
+            color: #1a1a1a !important;
             font-weight: 700 !important;
-            font-size: 1.1rem !important;
-            color: #1a202c !important;
-            border: 3px solid #667eea !important;
-        }
-        
-        .streamlit-expanderHeader:hover {
-            background: #ffffff !important;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            transform: scale(1.01);
+            border-radius: 10px !important;
         }
 
         /* File Uploader */
         [data-testid="stFileUploader"] {
             background: rgba(255,255,255,0.95);
-            border: 4px dashed #667eea;
-            border-radius: 15px;
+            border: 3px dashed #667eea;
+            border-radius: 10px;
             padding: 2rem;
-        }
-        
-        [data-testid="stFileUploader"]:hover {
-            border-color: #764ba2;
-            background: #ffffff;
-            border-style: solid;
         }
 
         /* Checkbox */
-        .stCheckbox {
-            background: rgba(255,255,255,0.15);
-            padding: 0.85rem;
-            border-radius: 10px;
-        }
-        
-        .stCheckbox > label {
+        .stCheckbox label {
+            color: #1a1a1a !important;
             font-weight: 600 !important;
-            color: #ffffff !important;
-            font-size: 1.05rem !important;
-        }
-
-        /* Plotly Charts */
-        .js-plotly-plot {
-            background: rgba(255,255,255,0.95) !important;
-            backdrop-filter: blur(10px);
-            border-radius: 20px !important;
-            padding: 15px !important;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.15) !important;
-            border: 2px solid rgba(255,255,255,0.5);
-        }
-
-        /* Scrollbar */
-        ::-webkit-scrollbar {
-            width: 12px;
-            height: 12px;
-        }
-        
-        ::-webkit-scrollbar-track {
-            background: rgba(255,255,255,0.1);
-            border-radius: 10px;
-        }
-        
-        ::-webkit-scrollbar-thumb {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 10px;
-        }
-        
-        ::-webkit-scrollbar-thumb:hover {
-            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
-        }
-
-        /* Animation */
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .element-container {
-            animation: fadeIn 0.5s ease-out;
-        }
-        
-        /* Additional forced styling for maximum selectbox visibility */
-        .stSelectbox input {
-            color: #1a202c !important;
-            font-weight: 800 !important;
-            font-size: 1.15rem !important;
-        }
-        
-        /* Force all text in selectbox to be dark and bold */
-        .stSelectbox [class*="css"] {
-            color: #1a202c !important;
+            background: rgba(255,255,255,0.9) !important;
+            padding: 0.5rem !important;
+            border-radius: 8px !important;
         }
         </style>
-        
-        <script>
-        // JavaScript to ensure selectbox text is always visible
-        document.addEventListener('DOMContentLoaded', function() {
-            const observer = new MutationObserver(function(mutations) {
-                document.querySelectorAll('.stSelectbox div[role="button"]').forEach(function(el) {
-                    el.style.color = '#1a202c';
-                    el.style.fontWeight = '800';
-                    el.style.fontSize = '1.15rem';
-                });
-                document.querySelectorAll('.stSelectbox span').forEach(function(el) {
-                    el.style.color = '#1a202c';
-                    el.style.fontWeight = '800';
-                });
-            });
-            observer.observe(document.body, { childList: true, subtree: true });
-        });
-        </script>
     """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
