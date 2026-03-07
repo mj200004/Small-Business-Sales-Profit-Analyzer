@@ -245,9 +245,11 @@ def set_page(page):
     st.session_state.page = page
 
 def logout():
-    for k in ['token', 'logged_in', 'username', 'user_id', 'role', 'uploaded_df',
-              'active_business_id', 'currency_symbol', 'default_reorder_level']:
-        st.session_state[k] = None
+    keys_to_clear = ['token', 'logged_in', 'username', 'user_id', 'role', 'uploaded_df',
+                     'active_business_id', 'currency_symbol', 'default_reorder_level']
+    for k in keys_to_clear:
+        if k in st.session_state:
+            del st.session_state[k]
     st.session_state.page = 'Home'
 
 def authenticate():
@@ -751,7 +753,7 @@ def show_metric_row(metrics):
         col.metric(label, value, delta)
 
 # -----------------------------------------------------------------------------
-# Page Functions (unchanged)
+# Page Functions
 # -----------------------------------------------------------------------------
 def page_home():
     st.title("Business Analyzer")
