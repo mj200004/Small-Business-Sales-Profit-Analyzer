@@ -54,50 +54,35 @@ SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'your-secret-key-change-in-product
 JWT_ALGORITHM = 'HS256'
 
 # -----------------------------------------------------------------------------
-# SIMPLE AND EFFECTIVE CSS - SELECTBOX FIX
+# CLEAN SIMPLE CSS - NO COMPLEX OVERRIDES
 # -----------------------------------------------------------------------------
 def apply_custom_css():
     st.markdown("""
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        
+        /* Clean modern font */
         * {
-            font-family: 'Inter', sans-serif !important;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
         
-        /* Main App Background */
-        .stApp { 
+        /* App background */
+        .stApp {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
 
-        /* Sidebar */
+        /* Sidebar - white background */
         [data-testid="stSidebar"] {
-            background: rgba(255, 255, 255, 0.95) !important;
+            background-color: #ffffff !important;
         }
         
-        /* Sidebar title - BLACK not white */
-        [data-testid="stSidebar"] h1 {
-            color: #1a1a1a !important;
-            background: transparent !important;
-            text-shadow: none !important;
-        }
-        
-        /* Sidebar subheaders - BLACK */
-        [data-testid="stSidebar"] h2,
-        [data-testid="stSidebar"] h3 {
-            color: #1a1a1a !important;
-            background: transparent !important;
-            text-shadow: none !important;
+        /* Sidebar text - all black */
+        [data-testid="stSidebar"] * {
+            color: #000000 !important;
         }
 
-        /* Headers */
-        h1, h2, h3 {
+        /* Main content headers - white text */
+        .main h1, .main h2, .main h3 {
             color: #ffffff !important;
-            font-weight: 700 !important;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-            padding: 1rem;
-            background: rgba(255,255,255,0.15);
-            border-radius: 12px;
+            font-weight: 600 !important;
         }
 
         /* Buttons */
@@ -105,193 +90,155 @@ def apply_custom_css():
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important;
             border: none !important;
-            border-radius: 10px !important;
-            padding: 0.75rem 2rem !important;
-            font-weight: 600 !important;
-            font-size: 1rem !important;
+            border-radius: 8px !important;
+            padding: 0.5rem 1rem !important;
+            font-weight: 500 !important;
         }
         
         .stButton > button:hover {
-            transform: translateY(-2px) !important;
-            box-shadow: 0 8px 20px rgba(0,0,0,0.3) !important;
+            opacity: 0.9 !important;
+            transform: translateY(-1px) !important;
         }
         
-        /* ALL INPUT LABELS - NO WHITE COLOR */
+        /* Input labels - white background with black text */
         label {
-            color: #1a1a1a !important;
-            font-weight: 600 !important;
-            font-size: 1rem !important;
-            background: rgba(255,255,255,0.9) !important;
-            padding: 0.5rem !important;
-            border-radius: 8px !important;
+            background-color: rgba(255,255,255,0.95) !important;
+            color: #000000 !important;
+            padding: 0.25rem 0.5rem !important;
+            border-radius: 4px !important;
+            font-weight: 500 !important;
             display: inline-block !important;
-            margin-bottom: 0.5rem !important;
+            margin-bottom: 0.25rem !important;
         }
         
-        /* Text Inputs */
+        /* Text inputs */
         input[type="text"],
         input[type="email"],
         input[type="password"],
         input[type="number"],
         textarea {
             background-color: #ffffff !important;
-            border: 2px solid #667eea !important;
-            border-radius: 8px !important;
-            padding: 0.75rem !important;
-            font-size: 1rem !important;
             color: #000000 !important;
+            border: 2px solid #cccccc !important;
+            border-radius: 6px !important;
+            padding: 0.5rem !important;
+            font-size: 14px !important;
+        }
+        
+        /* SELECTBOX FIX - Simple and effective */
+        div[data-baseweb="select"] {
+            background-color: #ffffff !important;
+        }
+        
+        div[data-baseweb="select"] > div {
+            background-color: #ffffff !important;
+            color: #000000 !important;
+            font-size: 14px !important;
             font-weight: 500 !important;
+            padding: 0.5rem !important;
+            border: 2px solid #cccccc !important;
+            border-radius: 6px !important;
         }
         
-        /* SELECTBOX - CRITICAL FIX */
-        /* Container */
-        [data-baseweb="select"] {
-            background-color: #ffffff !important;
-            border: 3px solid #667eea !important;
-            border-radius: 8px !important;
-        }
-        
-        /* Selected value text - MUST BE BLACK AND VISIBLE */
-        [data-baseweb="select"] > div {
-            background-color: #ffffff !important;
-            color: #000000 !important;
-            font-weight: 700 !important;
-            font-size: 1.1rem !important;
-            padding: 0.75rem !important;
-        }
-        
-        /* All text inside selectbox - FORCE BLACK */
-        [data-baseweb="select"] * {
+        div[data-baseweb="select"] span {
             color: #000000 !important;
         }
         
-        /* The actual selected value span */
-        [data-baseweb="select"] span {
-            color: #000000 !important;
-            font-weight: 700 !important;
-        }
-        
-        /* Input element inside selectbox */
-        [data-baseweb="select"] input {
-            color: #000000 !important;
-            font-weight: 700 !important;
-        }
-        
-        /* Dropdown arrow */
-        [data-baseweb="select"] svg {
+        div[data-baseweb="select"] svg {
             fill: #000000 !important;
         }
         
         /* Dropdown menu */
-        [role="listbox"] {
+        ul[role="listbox"] {
             background-color: #ffffff !important;
-            border: 2px solid #667eea !important;
-            border-radius: 8px !important;
+            border: 2px solid #cccccc !important;
         }
         
-        /* Dropdown options */
-        [role="option"] {
+        li[role="option"] {
             background-color: #ffffff !important;
             color: #000000 !important;
-            font-weight: 600 !important;
-            font-size: 1rem !important;
-            padding: 0.75rem 1rem !important;
+            padding: 0.5rem !important;
         }
         
-        [role="option"]:hover {
+        li[role="option"]:hover {
             background-color: #667eea !important;
             color: #ffffff !important;
         }
         
-        [role="option"][aria-selected="true"] {
-            background-color: #764ba2 !important;
-            color: #ffffff !important;
-            font-weight: 700 !important;
+        /* Radio buttons */
+        div[data-testid="stRadio"] > div {
+            background-color: rgba(255,255,255,0.95) !important;
+            padding: 0.5rem !important;
+            border-radius: 6px !important;
         }
         
-        /* Radio Buttons */
-        [data-testid="stRadio"] > div {
-            background: rgba(255,255,255,0.9);
-            padding: 1rem;
-            border-radius: 10px;
-        }
-        
-        [data-testid="stRadio"] label {
-            color: #1a1a1a !important;
-            font-weight: 600 !important;
+        div[data-testid="stRadio"] label {
+            color: #000000 !important;
         }
 
         /* Metrics */
-        [data-testid="stMetric"] {
-            background: rgba(255,255,255,0.95);
-            border-radius: 15px;
-            padding: 1.5rem;
-            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+        div[data-testid="stMetric"] {
+            background-color: rgba(255,255,255,0.95) !important;
+            border-radius: 10px !important;
+            padding: 1rem !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
         }
         
-        [data-testid="stMetricLabel"] {
+        div[data-testid="stMetricLabel"] {
             color: #667eea !important;
-            font-weight: 700 !important;
+            font-weight: 600 !important;
         }
         
-        [data-testid="stMetricValue"] {
-            color: #1a1a1a !important;
-            font-weight: 800 !important;
+        div[data-testid="stMetricValue"] {
+            color: #000000 !important;
+            font-weight: 700 !important;
         }
 
         /* Tables */
         .stDataFrame {
-            background: rgba(255,255,255,0.95) !important;
-            border-radius: 10px !important;
+            background-color: #ffffff !important;
+            border-radius: 8px !important;
         }
 
         /* Tabs */
-        .stTabs [data-baseweb="tab-list"] {
-            background: rgba(255,255,255,0.2);
-            padding: 0.5rem;
-            border-radius: 10px;
-        }
-        
-        .stTabs [data-baseweb="tab"] {
+        button[data-baseweb="tab"] {
             color: #ffffff !important;
-            font-weight: 600 !important;
+            font-weight: 500 !important;
         }
         
-        .stTabs [aria-selected="true"] {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            color: white !important;
+        button[data-baseweb="tab"][aria-selected="true"] {
+            background-color: rgba(255,255,255,0.2) !important;
+            border-bottom: 3px solid #ffffff !important;
         }
 
         /* Messages */
         .stSuccess, .stError, .stWarning, .stInfo {
-            border-radius: 10px !important;
-            padding: 1rem !important;
-            font-weight: 600 !important;
+            border-radius: 8px !important;
+            padding: 0.75rem !important;
         }
 
         /* Expander */
         .streamlit-expanderHeader {
-            background: rgba(255,255,255,0.95) !important;
-            color: #1a1a1a !important;
-            font-weight: 700 !important;
-            border-radius: 10px !important;
+            background-color: rgba(255,255,255,0.95) !important;
+            color: #000000 !important;
+            font-weight: 600 !important;
+            border-radius: 8px !important;
         }
 
-        /* File Uploader */
-        [data-testid="stFileUploader"] {
-            background: rgba(255,255,255,0.95);
-            border: 3px dashed #667eea;
-            border-radius: 10px;
-            padding: 2rem;
+        /* File uploader */
+        section[data-testid="stFileUploader"] {
+            background-color: rgba(255,255,255,0.95) !important;
+            border: 2px dashed #667eea !important;
+            border-radius: 8px !important;
+            padding: 1rem !important;
         }
 
         /* Checkbox */
         .stCheckbox label {
-            color: #1a1a1a !important;
-            font-weight: 600 !important;
-            background: rgba(255,255,255,0.9) !important;
-            padding: 0.5rem !important;
-            border-radius: 8px !important;
+            background-color: rgba(255,255,255,0.95) !important;
+            color: #000000 !important;
+            padding: 0.25rem 0.5rem !important;
+            border-radius: 4px !important;
         }
         </style>
     """, unsafe_allow_html=True)
