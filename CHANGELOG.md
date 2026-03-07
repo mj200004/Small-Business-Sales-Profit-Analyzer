@@ -367,6 +367,6 @@ See LICENSE.txt for details.
 
 ---
 
-**Current Version**: 4.0.0  
-**Last Updated**: 2024  
+**Last Updated**: 2026
 **Status**: Production Ready
+
