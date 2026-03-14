@@ -1,7 +1,5 @@
 """
-Business Analyzer – Production Ready with Persistent Database
-All milestones + requested enhancements.
-Fixed: login_history user_id NULL issue, proper named column access.
+Small Business Sales Profit Analyzer – 
 """
 
 import streamlit as st
