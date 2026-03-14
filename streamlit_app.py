@@ -393,6 +393,12 @@ def page_home():
     """)
 
 def page_login():
+    # If already logged in, go straight to dashboard
+    if st.session_state.get('logged_in', False):
+        set_page('Dashboard')
+        st.rerun()
+        return
+
     st.title("Login")
     with st.form("login_form"):
         login_field = st.text_input("Username or Email")
@@ -405,7 +411,7 @@ def page_login():
                         'token': res['token'],
                         'logged_in': True,
                         'username': res['username'],
-                        'user_id': res['user_id'],          # Ensure user_id is set
+                        'user_id': res['user_id'],
                         'role': res['role'],
                         'active_business_id': res['active_business_id'],
                         'currency_symbol': res['currency_symbol'],
