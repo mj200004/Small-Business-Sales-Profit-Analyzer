@@ -1,18 +1,20 @@
 """
-Business Analyzer – All Milestones (1,2,3,4)
---------------------------------------------
-Refactored version with clean, unstyled interface.
+Business Analyzer – Production Ready with Persistent Database
+All milestones + requested enhancements.
 """
 
 import streamlit as st
 import pandas as pd
-import sqlite3
+import sqlalchemy as sa
+from sqlalchemy import create_engine, text
+from sqlalchemy.pool import NullPool
 import numpy as np
 import bcrypt
 import jwt
 from datetime import datetime, timedelta
 from contextlib import contextmanager
 import os
+from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.colors import qualitative
@@ -39,117 +41,172 @@ from sklearn.linear_model import LinearRegression
 # Configuration
 # -----------------------------------------------------------------------------
 class Config:
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    USER_DB = os.path.join(BASE_DIR, 'USER.db')
-    BUSINESS_DB = os.path.join(BASE_DIR, 'BUSINESS.db')
+    DATABASE_URL = os.environ.get('DATABASE_URL')
     SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'your-secret-key-change-in-production')
     JWT_ALGORITHM = 'HS256'
+    ADMIN_PASSWORD = "Project@123"   # Fixed password for admin dashboard
+
+    @classmethod
+    def get_engine(cls):
+        if cls.DATABASE_URL:
+            return create_engine(cls.DATABASE_URL, poolclass=NullPool)
+        else:
+            # Local SQLite fallback
+            data_dir = Path.home() / ".business_analyzer"
+            data_dir.mkdir(exist_ok=True)
+            db_path = data_dir / "app.db"
+            return create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
 
 # -----------------------------------------------------------------------------
-# Database Manager
+# Database Manager (SQLAlchemy)
 # -----------------------------------------------------------------------------
 class DBManager:
-    @staticmethod
+    _engine = None
+
+    @classmethod
+    def get_engine(cls):
+        if cls._engine is None:
+            cls._engine = Config.get_engine()
+        return cls._engine
+
+    @classmethod
     @contextmanager
-    def get_user_db():
-        conn = sqlite3.connect(Config.USER_DB, timeout=10)
-        conn.row_factory = sqlite3.Row
-        try:
+    def get_connection(cls):
+        engine = cls.get_engine()
+        with engine.connect() as conn:
             yield conn
             conn.commit()
-        finally:
-            conn.close()
 
-    @staticmethod
-    @contextmanager
-    def get_business_db():
-        conn = sqlite3.connect(Config.BUSINESS_DB, timeout=10)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-            conn.commit()
-        finally:
-            conn.close()
+    @classmethod
+    def init_db(cls):
+        """Create all tables if they don't exist."""
+        with cls.get_connection() as conn:
+            # Users table
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(255) UNIQUE NOT NULL,
+                    email VARCHAR(255) UNIQUE NOT NULL,
+                    password VARCHAR(255) NOT NULL,
+                    role VARCHAR(50) NOT NULL DEFAULT 'Owner',
+                    dob DATE,
+                    gender VARCHAR(50),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            # Login history
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS login_history (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    login_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    logout_time TIMESTAMP,
+                    session_duration INTEGER
+                )
+            """))
+            # Admin access logs
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS admin_access_logs (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    access_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            # Businesses
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS businesses (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    business_name VARCHAR(255) NOT NULL,
+                    business_type VARCHAR(255),
+                    address TEXT,
+                    phone VARCHAR(50),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            # Transactions
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS transactions (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    business_id INTEGER NOT NULL,
+                    type VARCHAR(50) NOT NULL,
+                    amount REAL NOT NULL,
+                    category VARCHAR(255),
+                    description TEXT,
+                    date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            # User preferences
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS user_preferences (
+                    user_id INTEGER PRIMARY KEY,
+                    active_business_id INTEGER,
+                    currency_symbol VARCHAR(10) DEFAULT '₹',
+                    default_reorder_level REAL DEFAULT 5.0
+                )
+            """))
+            # Products
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS products (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    business_id INTEGER NOT NULL,
+                    product_name VARCHAR(255) NOT NULL,
+                    sku VARCHAR(255) UNIQUE,
+                    quantity REAL DEFAULT 0,
+                    cost_price REAL DEFAULT 0,
+                    selling_price REAL DEFAULT 0,
+                    reorder_level REAL DEFAULT 5,
+                    category VARCHAR(255),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            # Stock movements
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS stock_movements (
+                    id SERIAL PRIMARY KEY,
+                    product_id INTEGER NOT NULL,
+                    movement_type VARCHAR(50) NOT NULL,
+                    quantity REAL NOT NULL,
+                    unit_cost REAL,
+                    unit_price REAL,
+                    reference_id INTEGER,
+                    movement_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    notes TEXT
+                )
+            """))
 
-    @staticmethod
-    def init_user_db():
-        with DBManager.get_user_db() as conn:
-            conn.execute('''CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                email TEXT UNIQUE NOT NULL,
-                password TEXT NOT NULL,
-                role TEXT NOT NULL DEFAULT 'Owner',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )''')
+    @classmethod
+    def execute(cls, query, params=None):
+        with cls.get_connection() as conn:
+            result = conn.execute(text(query), params or {})
+            if result.returns_rows:
+                return result.fetchall()
+            return result
 
-    @staticmethod
-    def init_business_db():
-        with DBManager.get_business_db() as conn:
-            conn.execute('''CREATE TABLE IF NOT EXISTS businesses (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                business_name TEXT NOT NULL,
-                business_type TEXT,
-                address TEXT,
-                phone TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )''')
-            conn.execute('''CREATE TABLE IF NOT EXISTS transactions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                business_id INTEGER NOT NULL,
-                type TEXT NOT NULL,
-                amount REAL NOT NULL,
-                category TEXT,
-                description TEXT,
-                date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )''')
-            conn.execute('''CREATE TABLE IF NOT EXISTS user_preferences (
-                user_id INTEGER PRIMARY KEY,
-                active_business_id INTEGER,
-                currency_symbol TEXT DEFAULT '₹',
-                default_reorder_level REAL DEFAULT 5.0
-            )''')
-            conn.execute('''CREATE TABLE IF NOT EXISTS products (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                business_id INTEGER NOT NULL,
-                product_name TEXT NOT NULL,
-                sku TEXT UNIQUE,
-                quantity REAL DEFAULT 0,
-                cost_price REAL DEFAULT 0,
-                selling_price REAL DEFAULT 0,
-                reorder_level REAL DEFAULT 5,
-                category TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )''')
-            conn.execute('''CREATE TABLE IF NOT EXISTS stock_movements (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                product_id INTEGER NOT NULL,
-                movement_type TEXT NOT NULL,
-                quantity REAL NOT NULL,
-                unit_cost REAL,
-                unit_price REAL,
-                reference_id INTEGER,
-                movement_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                notes TEXT,
-                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
-            )''')
-            conn.execute('''CREATE TABLE IF NOT EXISTS admin_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                admin_user_id INTEGER,
-                action TEXT,
-                target_user_id INTEGER,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )''')
-            # Ensure preferences columns exist
-            for col in ['currency_symbol', 'default_reorder_level']:
-                try:
-                    conn.execute(f"ALTER TABLE user_preferences ADD COLUMN {col} TEXT DEFAULT '₹'")
-                except sqlite3.OperationalError:
-                    pass
+    @classmethod
+    def fetch_one(cls, query, params=None):
+        with cls.get_connection() as conn:
+            result = conn.execute(text(query), params or {})
+            return result.fetchone()
+
+    @classmethod
+    def fetch_all(cls, query, params=None):
+        with cls.get_connection() as conn:
+            result = conn.execute(text(query), params or {})
+            return result.fetchall()
+
+    @classmethod
+    def insert_and_get_id(cls, query, params=None):
+        with cls.get_connection() as conn:
+            result = conn.execute(text(query), params or {})
+            # For PostgreSQL, we use RETURNING id
+            if result.returns_rows:
+                return result.fetchone()[0]
+            # Fallback for SQLite
+            return result.lastrowid
 
 # -----------------------------------------------------------------------------
 # Authentication
@@ -182,47 +239,72 @@ class AuthManager:
 
     @staticmethod
     def login(username, password):
-        with DBManager.get_user_db() as conn:
-            user = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
-            if user and AuthManager.check_password(password, user['password']):
-                # Load preferences
-                with DBManager.get_business_db() as b_conn:
-                    pref = b_conn.execute(
-                        "SELECT active_business_id, currency_symbol, default_reorder_level FROM user_preferences WHERE user_id = ?",
-                        (user['id'],)
-                    ).fetchone()
-                    if not pref:
-                        b_conn.execute("INSERT INTO user_preferences (user_id) VALUES (?)", (user['id'],))
-                        pref = {'active_business_id': None, 'currency_symbol': '₹', 'default_reorder_level': 5.0}
-                return {
-                    'success': True,
-                    'token': AuthManager.create_jwt_token(user['id'], user['username'], user['role']),
-                    'user_id': user['id'],
-                    'username': user['username'],
-                    'role': user['role'],
-                    'active_business_id': pref['active_business_id'],
-                    'currency_symbol': pref['currency_symbol'],
-                    'default_reorder_level': pref['default_reorder_level']
-                }
+        user = DBManager.fetch_one(
+            "SELECT * FROM users WHERE username = :username",
+            {"username": username}
+        )
+        if user and AuthManager.check_password(password, user[3]):  # index 3 is password
+            # Map to dict for clarity (but we'll use indices)
+            user_id = user[0]
+            username = user[1]
+            role = user[4]
+
+            # Log login
+            login_id = DBManager.insert_and_get_id(
+                "INSERT INTO login_history (user_id) VALUES (:uid) RETURNING id",
+                {"uid": user_id}
+            )
+            st.session_state.current_login_id = login_id
+
+            # Load preferences
+            pref = DBManager.fetch_one(
+                "SELECT active_business_id, currency_symbol, default_reorder_level FROM user_preferences WHERE user_id = :uid",
+                {"uid": user_id}
+            )
+            if not pref:
+                DBManager.execute(
+                    "INSERT INTO user_preferences (user_id) VALUES (:uid)",
+                    {"uid": user_id}
+                )
+                pref = (None, '₹', 5.0)
+
+            return {
+                'success': True,
+                'token': AuthManager.create_jwt_token(user_id, username, role),
+                'user_id': user_id,
+                'username': username,
+                'role': role,
+                'active_business_id': pref[0],
+                'currency_symbol': pref[1],
+                'default_reorder_level': pref[2]
+            }
         return {'success': False, 'message': 'Invalid username or password'}
 
     @staticmethod
-    def register(username, email, password, role):
+    def register(username, email, password, role, dob, gender):
         try:
             hashed = AuthManager.hash_password(password)
-            with DBManager.get_user_db() as conn:
-                cur = conn.cursor()
-                cur.execute("INSERT INTO users (username, email, password, role) VALUES (?,?,?,?)",
-                            (username, email, hashed, role))
-                user_id = cur.lastrowid
-            with DBManager.get_business_db() as b_conn:
-                b_conn.execute("INSERT INTO user_preferences (user_id) VALUES (?)", (user_id,))
+            user_id = DBManager.insert_and_get_id(
+                """
+                INSERT INTO users (username, email, password, role, dob, gender)
+                VALUES (:un, :em, :pw, :role, :dob, :gender)
+                RETURNING id
+                """,
+                {"un": username, "em": email, "pw": hashed,
+                 "role": role, "dob": dob, "gender": gender}
+            )
+            DBManager.execute(
+                "INSERT INTO user_preferences (user_id) VALUES (:uid)",
+                {"uid": user_id}
+            )
             return {'success': True, 'message': 'Account created'}
-        except sqlite3.IntegrityError:
-            return {'success': False, 'message': 'Username or email already exists'}
+        except Exception as e:
+            if 'unique constraint' in str(e).lower():
+                return {'success': False, 'message': 'Username or email already exists'}
+            return {'success': False, 'message': str(e)}
 
 # -----------------------------------------------------------------------------
-# Session State Helpers
+# Session Helpers
 # -----------------------------------------------------------------------------
 def init_session():
     defaults = {
@@ -235,7 +317,9 @@ def init_session():
         'uploaded_df': None,
         'active_business_id': None,
         'currency_symbol': '₹',
-        'default_reorder_level': 5.0
+        'default_reorder_level': 5.0,
+        'admin_authenticated': False,
+        'current_login_id': None
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -245,11 +329,22 @@ def set_page(page):
     st.session_state.page = page
 
 def logout():
+    if st.session_state.current_login_id:
+        # Update logout time and duration
+        DBManager.execute(
+            """
+            UPDATE login_history
+            SET logout_time = CURRENT_TIMESTAMP,
+                session_duration = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - login_time))::INTEGER
+            WHERE id = :lid
+            """,
+            {"lid": st.session_state.current_login_id}
+        )
     keys_to_clear = ['token', 'logged_in', 'username', 'user_id', 'role', 'uploaded_df',
-                     'active_business_id', 'currency_symbol', 'default_reorder_level']
+                     'active_business_id', 'currency_symbol', 'default_reorder_level',
+                     'current_login_id', 'admin_authenticated']
     for k in keys_to_clear:
-        if k in st.session_state:
-            del st.session_state[k]
+        st.session_state.pop(k, None)
     st.session_state.page = 'Home'
 
 def authenticate():
@@ -271,16 +366,16 @@ def can_delete_transactions():
     return st.session_state.role == 'Owner'
 
 # -----------------------------------------------------------------------------
-# Business Logic Helpers
+# Business Logic Helpers (adapted to use DBManager)
 # -----------------------------------------------------------------------------
 class Analytics:
     @staticmethod
     def calculate_profit_metrics(user_id, business_id, period='monthly'):
-        with DBManager.get_business_db() as conn:
-            df = pd.read_sql("""
-                SELECT date, type, amount, category FROM transactions
-                WHERE user_id = ? AND business_id = ? ORDER BY date
-            """, conn, params=(user_id, business_id))
+        rows = DBManager.fetch_all(
+            "SELECT date, type, amount, category FROM transactions WHERE user_id = :uid AND business_id = :bid ORDER BY date",
+            {"uid": user_id, "bid": business_id}
+        )
+        df = pd.DataFrame(rows, columns=['date', 'type', 'amount', 'category'])
         if df.empty:
             return None
         df['date'] = pd.to_datetime(df['date'])
@@ -289,13 +384,16 @@ class Analytics:
         total_revenue = sales['amount'].sum() if not sales.empty else 0
         total_expenses = expenses['amount'].sum() if not expenses.empty else 0
 
-        with DBManager.get_business_db() as conn:
-            cogs_data = pd.read_sql("""
-                SELECT sm.quantity, sm.unit_cost FROM stock_movements sm
-                JOIN products p ON sm.product_id = p.id
-                WHERE p.user_id = ? AND p.business_id = ? AND sm.movement_type = 'sale'
-            """, conn, params=(user_id, business_id))
-        total_cogs = (cogs_data['quantity'] * cogs_data['unit_cost']).sum() if not cogs_data.empty else 0
+        cogs_rows = DBManager.fetch_all(
+            """
+            SELECT sm.quantity, sm.unit_cost FROM stock_movements sm
+            JOIN products p ON sm.product_id = p.id
+            WHERE p.user_id = :uid AND p.business_id = :bid AND sm.movement_type = 'sale'
+            """,
+            {"uid": user_id, "bid": business_id}
+        )
+        cogs_df = pd.DataFrame(cogs_rows, columns=['quantity', 'unit_cost'])
+        total_cogs = (cogs_df['quantity'] * cogs_df['unit_cost']).sum() if not cogs_df.empty else 0
 
         gross_profit = total_revenue - total_cogs
         net_profit = gross_profit - total_expenses
@@ -325,117 +423,158 @@ class Analytics:
 
     @staticmethod
     def get_monthly_profit_trend(user_id, business_id, months=6):
-        with DBManager.get_business_db() as conn:
-            df = pd.read_sql("""
-                SELECT strftime('%Y-%m', date) as month,
-                       SUM(CASE WHEN type = 'Sales' THEN amount ELSE 0 END) as revenue,
-                       SUM(CASE WHEN type = 'Expense' THEN amount ELSE 0 END) as expenses
-                FROM transactions
-                WHERE user_id = ? AND business_id = ? AND date >= date('now', ?)
-                GROUP BY month ORDER BY month
-            """, conn, params=(user_id, business_id, f'-{months} months'))
-        if not df.empty:
-            df['profit'] = df['revenue'] - df['expenses']
-            df['margin'] = (df['profit'] / df['revenue'] * 100).round(1)
-            df['month_dt'] = pd.to_datetime(df['month'] + '-01')
-        return df
+        rows = DBManager.fetch_all(
+            "SELECT date, type, amount FROM transactions WHERE user_id = :uid AND business_id = :bid",
+            {"uid": user_id, "bid": business_id}
+        )
+        df = pd.DataFrame(rows, columns=['date', 'type', 'amount'])
+        if df.empty:
+            return pd.DataFrame()
+        df['date'] = pd.to_datetime(df['date'])
+        cutoff = datetime.now() - timedelta(days=30*months)
+        df = df[df['date'] >= cutoff]
+        if df.empty:
+            return pd.DataFrame()
+        df['month'] = df['date'].dt.to_period('M').astype(str)
+        pivot = df.pivot_table(index='month', columns='type', values='amount', aggfunc='sum', fill_value=0)
+        if 'Sales' not in pivot.columns:
+            pivot['Sales'] = 0
+        if 'Expense' not in pivot.columns:
+            pivot['Expense'] = 0
+        pivot['profit'] = pivot['Sales'] - pivot['Expense']
+        pivot['margin'] = (pivot['profit'] / pivot['Sales'] * 100).round(1).replace([np.inf, -np.inf], 0).fillna(0)
+        pivot = pivot.reset_index()
+        pivot['month_dt'] = pd.to_datetime(pivot['month'] + '-01')
+        return pivot[['month_dt', 'Sales', 'Expense', 'profit', 'margin']].rename(
+            columns={'Sales': 'revenue', 'Expense': 'expenses'})
 
     @staticmethod
     def add_product(user_id, business_id, name, sku, qty, cost, price, reorder, category):
-        with DBManager.get_business_db() as conn:
-            try:
-                cur = conn.cursor()
-                cur.execute("""
-                    INSERT INTO products (user_id, business_id, product_name, sku, quantity,
+        try:
+            pid = DBManager.insert_and_get_id(
+                """
+                INSERT INTO products (user_id, business_id, product_name, sku, quantity,
                     cost_price, selling_price, reorder_level, category)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (user_id, business_id, name, sku, qty, cost, price, reorder, category))
-                pid = cur.lastrowid
-                if qty > 0:
-                    cur.execute("""
-                        INSERT INTO stock_movements (product_id, movement_type, quantity, unit_cost, notes)
-                        VALUES (?, 'purchase', ?, ?, 'Initial stock')
-                    """, (pid, qty, cost))
-                return True, "Product added."
-            except sqlite3.IntegrityError:
+                VALUES (:uid, :bid, :name, :sku, :qty, :cost, :price, :reorder, :cat)
+                RETURNING id
+                """,
+                {"uid": user_id, "bid": business_id, "name": name, "sku": sku,
+                 "qty": qty, "cost": cost, "price": price, "reorder": reorder, "cat": category}
+            )
+            if qty > 0:
+                DBManager.execute(
+                    """
+                    INSERT INTO stock_movements (product_id, movement_type, quantity, unit_cost, notes)
+                    VALUES (:pid, 'purchase', :qty, :cost, 'Initial stock')
+                    """,
+                    {"pid": pid, "qty": qty, "cost": cost}
+                )
+            return True, "Product added."
+        except Exception as e:
+            if 'unique constraint' in str(e).lower():
                 return False, "SKU already exists."
-            except Exception as e:
-                return False, str(e)
+            return False, str(e)
 
     @staticmethod
     def record_stock_movement(pid, move_type, qty, unit_cost=None, unit_price=None, ref=None, notes=""):
-        with DBManager.get_business_db() as conn:
-            cur = conn.cursor()
-            prod = cur.execute("SELECT quantity, cost_price FROM products WHERE id = ?", (pid,)).fetchone()
+        try:
+            prod = DBManager.fetch_one(
+                "SELECT quantity, cost_price FROM products WHERE id = :pid",
+                {"pid": pid}
+            )
             if not prod:
                 return False, "Product not found."
-            curr_qty, curr_cost = prod['quantity'], prod['cost_price']
+            curr_qty, curr_cost = prod[0], prod[1]
 
             if move_type == 'purchase':
                 new_qty = curr_qty + qty
                 if unit_cost and unit_cost > 0:
                     new_cost = (curr_qty * curr_cost + qty * unit_cost) / new_qty
-                    cur.execute("UPDATE products SET quantity = ?, cost_price = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                                (new_qty, new_cost, pid))
+                    DBManager.execute(
+                        "UPDATE products SET quantity = :qty, cost_price = :cost, updated_at = CURRENT_TIMESTAMP WHERE id = :pid",
+                        {"qty": new_qty, "cost": new_cost, "pid": pid}
+                    )
                 else:
-                    cur.execute("UPDATE products SET quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (new_qty, pid))
+                    DBManager.execute(
+                        "UPDATE products SET quantity = :qty, updated_at = CURRENT_TIMESTAMP WHERE id = :pid",
+                        {"qty": new_qty, "pid": pid}
+                    )
             elif move_type == 'sale':
                 if qty > curr_qty:
                     return False, f"Insufficient stock. Available: {curr_qty}"
                 new_qty = curr_qty - qty
-                cur.execute("UPDATE products SET quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (new_qty, pid))
+                DBManager.execute(
+                    "UPDATE products SET quantity = :qty, updated_at = CURRENT_TIMESTAMP WHERE id = :pid",
+                    {"qty": new_qty, "pid": pid}
+                )
             elif move_type == 'adjustment':
-                cur.execute("UPDATE products SET quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (qty, pid))
+                DBManager.execute(
+                    "UPDATE products SET quantity = :qty, updated_at = CURRENT_TIMESTAMP WHERE id = :pid",
+                    {"qty": qty, "pid": pid}
+                )
             else:
                 return False, "Invalid movement type."
 
-            cur.execute("""
+            DBManager.execute(
+                """
                 INSERT INTO stock_movements (product_id, movement_type, quantity, unit_cost, unit_price, reference_id, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (pid, move_type, qty, unit_cost, unit_price, ref, notes))
+                VALUES (:pid, :mtype, :qty, :ucost, :uprice, :ref, :notes)
+                """,
+                {"pid": pid, "mtype": move_type, "qty": qty,
+                 "ucost": unit_cost, "uprice": unit_price, "ref": ref, "notes": notes}
+            )
             return True, "Movement recorded."
+        except Exception as e:
+            return False, str(e)
 
     @staticmethod
     def get_low_stock_items(user_id, business_id):
-        with DBManager.get_business_db() as conn:
-            return pd.read_sql("""
-                SELECT product_name, sku, quantity, reorder_level, (reorder_level - quantity) as needed
-                FROM products WHERE user_id = ? AND business_id = ? AND quantity <= reorder_level
-                ORDER BY needed DESC
-            """, conn, params=(user_id, business_id))
+        rows = DBManager.fetch_all(
+            """
+            SELECT product_name, sku, quantity, reorder_level, (reorder_level - quantity) as needed
+            FROM products WHERE user_id = :uid AND business_id = :bid AND quantity <= reorder_level
+            ORDER BY needed DESC
+            """,
+            {"uid": user_id, "bid": business_id}
+        )
+        return pd.DataFrame(rows, columns=['product_name', 'sku', 'quantity', 'reorder_level', 'needed'])
 
     @staticmethod
     def get_inventory_value(user_id, business_id):
-        with DBManager.get_business_db() as conn:
-            res = pd.read_sql("""
-                SELECT COUNT(*) as product_count, SUM(quantity) as total_units,
-                       SUM(quantity * cost_price) as total_value
-                FROM products WHERE user_id = ? AND business_id = ?
-            """, conn, params=(user_id, business_id)).iloc[0]
-        return {k: res[k] or 0 for k in ['product_count', 'total_units', 'total_value']}
+        row = DBManager.fetch_one(
+            """
+            SELECT COUNT(*) as product_count, COALESCE(SUM(quantity), 0) as total_units,
+                   COALESCE(SUM(quantity * cost_price), 0) as total_value
+            FROM products WHERE user_id = :uid AND business_id = :bid
+            """,
+            {"uid": user_id, "bid": business_id}
+        )
+        return {'product_count': row[0], 'total_units': row[1], 'total_value': row[2]}
 
     @staticmethod
     def prepare_time_series(user_id, business_id, value_type='sales', freq='M'):
-        with DBManager.get_business_db() as conn:
-            df = pd.read_sql("SELECT date, type, amount FROM transactions WHERE user_id=? AND business_id=? ORDER BY date",
-                             conn, params=(user_id, business_id))
+        rows = DBManager.fetch_all(
+            "SELECT date, type, amount FROM transactions WHERE user_id = :uid AND business_id = :bid ORDER BY date",
+            {"uid": user_id, "bid": business_id}
+        )
+        df = pd.DataFrame(rows, columns=['date', 'type', 'amount'])
         if df.empty:
             return pd.DataFrame()
         df['date'] = pd.to_datetime(df['date'])
         if value_type == 'sales':
-            ts = df[df['type']=='Sales'].groupby('date')['amount'].sum().reset_index()
+            ts = df[df['type'] == 'Sales'].groupby('date')['amount'].sum().reset_index()
         elif value_type == 'profit':
-            sales = df[df['type']=='Sales'].groupby('date')['amount'].sum()
-            exp = df[df['type']=='Expense'].groupby('date')['amount'].sum()
+            sales = df[df['type'] == 'Sales'].groupby('date')['amount'].sum()
+            exp = df[df['type'] == 'Expense'].groupby('date')['amount'].sum()
             profit = (sales - exp).fillna(0).reset_index()
-            profit.columns = ['date','amount']
+            profit.columns = ['date', 'amount']
             ts = profit
         else:
             return pd.DataFrame()
         if ts.empty:
             return ts
         ts = ts.set_index('date').resample(freq).sum().reset_index()
-        ts.columns = ['ds','y']
+        ts.columns = ['ds', 'y']
         return ts.dropna()
 
     @staticmethod
@@ -481,62 +620,98 @@ class Analytics:
 
     @staticmethod
     def get_expense_by_category(user_id, business_id, period):
-        with DBManager.get_business_db() as conn:
-            q = "SELECT category, SUM(amount) as total FROM transactions WHERE user_id=? AND business_id=? AND type='Expense'"
-            params = [user_id, business_id]
-            if period == 'week':
-                q += " AND date >= date('now','-7 days')"
-            elif period == 'month':
-                q += " AND date >= date('now','-30 days')"
-            elif period == 'year':
-                q += " AND date >= date('now','-1 year')"
-            q += " GROUP BY category ORDER BY total DESC"
-            return pd.read_sql(q, conn, params=params)
+        params = {"uid": user_id, "bid": business_id}
+        date_filter = ""
+        if period == 'week':
+            date_filter = " AND date >= CURRENT_DATE - INTERVAL '7 days'"
+        elif period == 'month':
+            date_filter = " AND date >= CURRENT_DATE - INTERVAL '30 days'"
+        elif period == 'year':
+            date_filter = " AND date >= CURRENT_DATE - INTERVAL '1 year'"
+        # Note: INTERVAL syntax works in PostgreSQL; for SQLite we'd need a different approach.
+        # To keep it cross-platform, we'll fetch all and filter in Python.
+        rows = DBManager.fetch_all(
+            "SELECT category, amount, date FROM transactions WHERE user_id = :uid AND business_id = :bid AND type = 'Expense'",
+            params
+        )
+        df = pd.DataFrame(rows, columns=['category', 'amount', 'date'])
+        if df.empty:
+            return pd.DataFrame()
+        df['date'] = pd.to_datetime(df['date'])
+        if period == 'week':
+            cutoff = datetime.now() - timedelta(days=7)
+        elif period == 'month':
+            cutoff = datetime.now() - timedelta(days=30)
+        elif period == 'year':
+            cutoff = datetime.now() - timedelta(days=365)
+        else:
+            cutoff = datetime(1900,1,1)
+        df = df[df['date'] >= cutoff]
+        return df.groupby('category')['amount'].sum().reset_index().sort_values('amount', ascending=False)
 
     @staticmethod
     def get_sales_by_category(user_id, business_id, period):
-        with DBManager.get_business_db() as conn:
-            q = "SELECT category, SUM(amount) as total FROM transactions WHERE user_id=? AND business_id=? AND type='Sales'"
-            params = [user_id, business_id]
-            if period == 'week':
-                q += " AND date >= date('now','-7 days')"
-            elif period == 'month':
-                q += " AND date >= date('now','-30 days')"
-            elif period == 'year':
-                q += " AND date >= date('now','-1 year')"
-            q += " GROUP BY category ORDER BY total DESC"
-            return pd.read_sql(q, conn, params=params)
+        rows = DBManager.fetch_all(
+            "SELECT category, amount, date FROM transactions WHERE user_id = :uid AND business_id = :bid AND type = 'Sales'",
+            {"uid": user_id, "bid": business_id}
+        )
+        df = pd.DataFrame(rows, columns=['category', 'amount', 'date'])
+        if df.empty:
+            return pd.DataFrame()
+        df['date'] = pd.to_datetime(df['date'])
+        if period == 'week':
+            cutoff = datetime.now() - timedelta(days=7)
+        elif period == 'month':
+            cutoff = datetime.now() - timedelta(days=30)
+        elif period == 'year':
+            cutoff = datetime.now() - timedelta(days=365)
+        else:
+            cutoff = datetime(1900,1,1)
+        df = df[df['date'] >= cutoff]
+        return df.groupby('category')['amount'].sum().reset_index().sort_values('amount', ascending=False)
 
     @staticmethod
     def get_report_data(user_id, business_id, start_date, end_date):
-        with DBManager.get_business_db() as conn:
-            df = pd.read_sql("""
-                SELECT date, type, amount, category, description
-                FROM transactions
-                WHERE user_id=? AND business_id=?
-                  AND date BETWEEN ? AND ?
-                ORDER BY date
-            """, conn, params=(user_id, business_id, start_date, end_date))
-            summary = pd.read_sql("""
-                SELECT type, COUNT(*) as count, SUM(amount) as total
-                FROM transactions
-                WHERE user_id=? AND business_id=?
-                  AND date BETWEEN ? AND ?
-                GROUP BY type
-            """, conn, params=(user_id, business_id, start_date, end_date))
-            inventory = pd.read_sql("""
-                SELECT product_name, sku, quantity, cost_price, selling_price
-                FROM products
-                WHERE user_id=? AND business_id=?
-            """, conn, params=(user_id, business_id))
-        return {
-            'transactions': df,
-            'summary': summary,
-            'inventory': inventory
-        }
+        start = start_date.strftime('%Y-%m-%d')
+        end = end_date.strftime('%Y-%m-%d')
+        # Transactions
+        tx_rows = DBManager.fetch_all(
+            """
+            SELECT date, type, amount, category, description
+            FROM transactions
+            WHERE user_id = :uid AND business_id = :bid
+              AND date BETWEEN :start AND :end
+            ORDER BY date
+            """,
+            {"uid": user_id, "bid": business_id, "start": start, "end": end}
+        )
+        tx_df = pd.DataFrame(tx_rows, columns=['date', 'type', 'amount', 'category', 'description'])
+        # Summary
+        sum_rows = DBManager.fetch_all(
+            """
+            SELECT type, COUNT(*) as count, SUM(amount) as total
+            FROM transactions
+            WHERE user_id = :uid AND business_id = :bid
+              AND date BETWEEN :start AND :end
+            GROUP BY type
+            """,
+            {"uid": user_id, "bid": business_id, "start": start, "end": end}
+        )
+        sum_df = pd.DataFrame(sum_rows, columns=['type', 'count', 'total'])
+        # Inventory
+        inv_rows = DBManager.fetch_all(
+            """
+            SELECT product_name, sku, quantity, cost_price, selling_price
+            FROM products
+            WHERE user_id = :uid AND business_id = :bid
+            """,
+            {"uid": user_id, "bid": business_id}
+        )
+        inv_df = pd.DataFrame(inv_rows, columns=['product_name', 'sku', 'quantity', 'cost_price', 'selling_price'])
+        return {'transactions': tx_df, 'summary': sum_df, 'inventory': inv_df}
 
 # -----------------------------------------------------------------------------
-# Report Generation
+# Report Generation (unchanged)
 # -----------------------------------------------------------------------------
 def generate_excel_report(data_dict, start_date, end_date):
     output = io.BytesIO()
@@ -668,73 +843,81 @@ def send_email_simple(to_email, subject, body, attachment_bytes, attachment_file
 class Admin:
     @staticmethod
     def get_system_stats():
-        with DBManager.get_user_db() as u_conn:
-            total_users = u_conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-        with DBManager.get_business_db() as b_conn:
-            total_businesses = b_conn.execute("SELECT COUNT(*) FROM businesses").fetchone()[0]
-            total_transactions = b_conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0]
-            total_products = b_conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]
-        return {
-            'users': total_users,
-            'businesses': total_businesses,
-            'transactions': total_transactions,
-            'products': total_products
-        }
+        users = DBManager.fetch_one("SELECT COUNT(*) FROM users")[0]
+        businesses = DBManager.fetch_one("SELECT COUNT(*) FROM businesses")[0]
+        transactions = DBManager.fetch_one("SELECT COUNT(*) FROM transactions")[0]
+        products = DBManager.fetch_one("SELECT COUNT(*) FROM products")[0]
+        return {'users': users, 'businesses': businesses, 'transactions': transactions, 'products': products}
 
     @staticmethod
     def get_all_users_with_stats():
-        with DBManager.get_user_db() as u_conn:
-            users = pd.read_sql("SELECT id, username, email, role, created_at FROM users", u_conn)
-        with DBManager.get_business_db() as b_conn:
-            biz_counts = pd.read_sql("SELECT user_id, COUNT(*) as business_count FROM businesses GROUP BY user_id", b_conn)
-            tx_counts = pd.read_sql("SELECT user_id, COUNT(*) as transaction_count FROM transactions GROUP BY user_id", b_conn)
-        users = users.merge(biz_counts, left_on='id', right_on='user_id', how='left').drop('user_id', axis=1, errors='ignore')
-        users = users.merge(tx_counts, left_on='id', right_on='user_id', how='left').drop('user_id', axis=1, errors='ignore')
-        users['business_count'] = users['business_count'].fillna(0).astype(int)
-        users['transaction_count'] = users['transaction_count'].fillna(0).astype(int)
-        return users
+        users = DBManager.fetch_all("SELECT id, username, email, role, dob, gender FROM users")
+        users_df = pd.DataFrame(users, columns=['id','username','email','role','dob','gender'])
+        biz_counts = DBManager.fetch_all("SELECT user_id, COUNT(*) as cnt FROM businesses GROUP BY user_id")
+        biz_df = pd.DataFrame(biz_counts, columns=['user_id','business_count'])
+        tx_counts = DBManager.fetch_all("SELECT user_id, COUNT(*) as cnt FROM transactions GROUP BY user_id")
+        tx_df = pd.DataFrame(tx_counts, columns=['user_id','transaction_count'])
+        users_df = users_df.merge(biz_df, left_on='id', right_on='user_id', how='left').drop('user_id', axis=1)
+        users_df = users_df.merge(tx_df, left_on='id', right_on='user_id', how='left').drop('user_id', axis=1)
+        users_df['business_count'] = users_df['business_count'].fillna(0).astype(int)
+        users_df['transaction_count'] = users_df['transaction_count'].fillna(0).astype(int)
+        return users_df
 
     @staticmethod
     def delete_user(user_id):
-        with DBManager.get_user_db() as u_conn:
-            u_conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
-        with DBManager.get_business_db() as b_conn:
-            b_conn.execute("DELETE FROM transactions WHERE user_id = ?", (user_id,))
-            b_conn.execute("DELETE FROM businesses WHERE user_id = ?", (user_id,))
-            b_conn.execute("DELETE FROM products WHERE user_id = ?", (user_id,))
-            b_conn.execute("DELETE FROM user_preferences WHERE user_id = ?", (user_id,))
+        DBManager.execute("DELETE FROM users WHERE id = :uid", {"uid": user_id})
+        # Also delete related data (foreign keys may cascade, but manually for safety)
+        DBManager.execute("DELETE FROM businesses WHERE user_id = :uid", {"uid": user_id})
+        DBManager.execute("DELETE FROM transactions WHERE user_id = :uid", {"uid": user_id})
+        DBManager.execute("DELETE FROM products WHERE user_id = :uid", {"uid": user_id})
+        DBManager.execute("DELETE FROM user_preferences WHERE user_id = :uid", {"uid": user_id})
+        DBManager.execute("DELETE FROM login_history WHERE user_id = :uid", {"uid": user_id})
+        DBManager.execute("DELETE FROM admin_access_logs WHERE user_id = :uid", {"uid": user_id})
+
+    @staticmethod
+    def change_user_password(user_id, new_password):
+        hashed = AuthManager.hash_password(new_password)
+        DBManager.execute(
+            "UPDATE users SET password = :pw WHERE id = :uid",
+            {"pw": hashed, "uid": user_id}
+        )
 
     @staticmethod
     def get_daily_transaction_volume(days=30):
-        with DBManager.get_business_db() as conn:
-            return pd.read_sql(f"""
-                SELECT date(date) as day, COUNT(*) as count
-                FROM transactions
-                WHERE date >= date('now', '-{days} days')
-                GROUP BY day
-                ORDER BY day
-            """, conn)
+        rows = DBManager.fetch_all(
+            f"""
+            SELECT date(date) as day, COUNT(*) as count
+            FROM transactions
+            WHERE date >= CURRENT_DATE - INTERVAL '{days} days'
+            GROUP BY day
+            ORDER BY day
+            """
+        )
+        return pd.DataFrame(rows, columns=['day', 'count'])
 
     @staticmethod
     def get_category_completeness():
-        with DBManager.get_business_db() as conn:
-            total = conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0]
-            missing = conn.execute("SELECT COUNT(*) FROM transactions WHERE category IS NULL OR category = ''").fetchone()[0]
+        total = DBManager.fetch_one("SELECT COUNT(*) FROM transactions")[0]
+        missing = DBManager.fetch_one("SELECT COUNT(*) FROM transactions WHERE category IS NULL OR category = ''")[0]
         return total, missing
 
     @staticmethod
     def get_top_users_by_transactions(limit=5):
-        with DBManager.get_user_db() as u_conn:
-            users = pd.read_sql("SELECT id, username FROM users", u_conn)
-        with DBManager.get_business_db() as b_conn:
-            tx_counts = pd.read_sql("SELECT user_id, COUNT(*) as tx_count FROM transactions GROUP BY user_id", b_conn)
-        merged = users.merge(tx_counts, left_on='id', right_on='user_id', how='left')
-        merged['tx_count'] = merged['tx_count'].fillna(0).astype(int)
-        merged = merged.sort_values('tx_count', ascending=False).head(limit)
-        return merged[['username', 'tx_count']]
+        rows = DBManager.fetch_all(
+            """
+            SELECT u.username, COUNT(t.id) as tx_count
+            FROM users u
+            LEFT JOIN transactions t ON u.id = t.user_id
+            GROUP BY u.id, u.username
+            ORDER BY tx_count DESC
+            LIMIT :lim
+            """,
+            {"lim": limit}
+        )
+        return pd.DataFrame(rows, columns=['username', 'tx_count'])
 
 # -----------------------------------------------------------------------------
-# UI Helpers (minimal)
+# UI Helpers
 # -----------------------------------------------------------------------------
 def get_color_sequence(n, palette='Plotly'):
     palettes = {
@@ -804,14 +987,16 @@ def page_signup():
         em = st.text_input("Email")
         pw = st.text_input("Password", type="password")
         cf = st.text_input("Confirm Password", type="password")
-        role = st.selectbox("Role", ["Owner", "Accountant", "Staff"])
+        dob = st.date_input("Date of Birth", min_value=datetime(1900,1,1), max_value=datetime.now().date())
+        gender = st.selectbox("Gender", ["Male", "Female", "Other"])
+        role = st.selectbox("Role", ["Owner", "Accountant", "Staff", "Manager"])
         if st.form_submit_button("Sign Up", use_container_width=True):
             if not nu or not em or not pw:
                 st.error("Please fill all required fields.")
             elif pw != cf:
                 st.error("Passwords do not match.")
             else:
-                res = AuthManager.register(nu, em, pw, role)
+                res = AuthManager.register(nu, em, pw, role, dob, gender)
                 if res['success']:
                     st.success("Account created! Please login.")
                     set_page("Login")
@@ -822,16 +1007,22 @@ def page_signup():
 def page_dashboard():
     st.title("Dashboard")
     aid = st.session_state.active_business_id
-    with DBManager.get_business_db() as conn:
-        if aid:
-            cnt = conn.execute("SELECT COUNT(*) FROM transactions WHERE user_id = ? AND business_id = ?",
-                               (st.session_state.user_id, aid)).fetchone()[0]
-            sales = conn.execute("SELECT SUM(amount) FROM transactions WHERE user_id = ? AND business_id = ? AND type = 'Sales'",
-                                 (st.session_state.user_id, aid)).fetchone()[0] or 0
-            exp = conn.execute("SELECT SUM(amount) FROM transactions WHERE user_id = ? AND business_id = ? AND type = 'Expense'",
-                               (st.session_state.user_id, aid)).fetchone()[0] or 0
-        else:
-            cnt = sales = exp = 0
+    # Get counts
+    if aid:
+        cnt = DBManager.fetch_one(
+            "SELECT COUNT(*) FROM transactions WHERE user_id = :uid AND business_id = :bid",
+            {"uid": st.session_state.user_id, "bid": aid}
+        )[0]
+        sales = DBManager.fetch_one(
+            "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE user_id = :uid AND business_id = :bid AND type = 'Sales'",
+            {"uid": st.session_state.user_id, "bid": aid}
+        )[0]
+        exp = DBManager.fetch_one(
+            "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE user_id = :uid AND business_id = :bid AND type = 'Expense'",
+            {"uid": st.session_state.user_id, "bid": aid}
+        )[0]
+    else:
+        cnt = sales = exp = 0
     profit = sales - exp
     show_metric_row([
         ("Transactions", cnt, None),
@@ -843,8 +1034,11 @@ def page_dashboard():
 
     st.divider()
     st.subheader("Active Business")
-    with DBManager.get_business_db() as conn:
-        biz = pd.read_sql("SELECT id, business_name FROM businesses WHERE user_id = ?", conn, params=(st.session_state.user_id,))
+    biz_rows = DBManager.fetch_all(
+        "SELECT id, business_name FROM businesses WHERE user_id = :uid",
+        {"uid": st.session_state.user_id}
+    )
+    biz = pd.DataFrame(biz_rows, columns=['id', 'business_name'])
     if not biz.empty:
         opts = biz.set_index('id')['business_name'].to_dict()
         cur = st.session_state.active_business_id
@@ -852,9 +1046,10 @@ def page_dashboard():
                            index=list(opts.keys()).index(cur) if cur in opts else 0)
         if sel != cur:
             st.session_state.active_business_id = sel
-            with DBManager.get_business_db() as conn:
-                conn.execute("UPDATE user_preferences SET active_business_id = ? WHERE user_id = ?",
-                             (sel, st.session_state.user_id))
+            DBManager.execute(
+                "UPDATE user_preferences SET active_business_id = :bid WHERE user_id = :uid",
+                {"bid": sel, "uid": st.session_state.user_id}
+            )
             st.rerun()
     else:
         st.warning("Create a business in 'My Businesses'.")
@@ -868,20 +1063,32 @@ def page_businesses():
             addr = st.text_area("Address")
             phone = st.text_input("Phone")
             if st.form_submit_button("Create", use_container_width=True) and name:
-                with DBManager.get_business_db() as conn:
-                    cur = conn.cursor()
-                    cur.execute("INSERT INTO businesses (user_id, business_name, business_type, address, phone) VALUES (?,?,?,?,?)",
-                                (st.session_state.user_id, name, typ, addr, phone))
-                    bid = cur.lastrowid
-                    if cur.execute("SELECT COUNT(*) FROM businesses WHERE user_id = ?", (st.session_state.user_id,)).fetchone()[0] == 1:
-                        conn.execute("UPDATE user_preferences SET active_business_id = ? WHERE user_id = ?", (bid, st.session_state.user_id))
-                        st.session_state.active_business_id = bid
+                bid = DBManager.insert_and_get_id(
+                    """
+                    INSERT INTO businesses (user_id, business_name, business_type, address, phone)
+                    VALUES (:uid, :name, :typ, :addr, :phone) RETURNING id
+                    """,
+                    {"uid": st.session_state.user_id, "name": name, "typ": typ, "addr": addr, "phone": phone}
+                )
+                # Check if first business
+                count = DBManager.fetch_one(
+                    "SELECT COUNT(*) FROM businesses WHERE user_id = :uid",
+                    {"uid": st.session_state.user_id}
+                )[0]
+                if count == 1:
+                    DBManager.execute(
+                        "UPDATE user_preferences SET active_business_id = :bid WHERE user_id = :uid",
+                        {"bid": bid, "uid": st.session_state.user_id}
+                    )
+                    st.session_state.active_business_id = bid
                 st.success(f"Business '{name}' created!")
                 st.rerun()
 
-    with DBManager.get_business_db() as conn:
-        df = pd.read_sql("SELECT id, business_name, business_type, address, phone, created_at FROM businesses WHERE user_id = ? ORDER BY created_at DESC",
-                         conn, params=(st.session_state.user_id,))
+    biz_rows = DBManager.fetch_all(
+        "SELECT id, business_name, business_type, address, phone, created_at FROM businesses WHERE user_id = :uid ORDER BY created_at DESC",
+        {"uid": st.session_state.user_id}
+    )
+    df = pd.DataFrame(biz_rows, columns=['id','business_name','business_type','address','phone','created_at'])
     if df.empty:
         st.info("No businesses yet.")
         return
@@ -893,16 +1100,17 @@ def page_businesses():
         cols[0].write(f"**{row['business_name']}**{active_tag}")
         cols[0].caption(f"{row['business_type'] or 'N/A'} | {row['phone'] or 'N/A'}")
         if not active and cols[1].button("Set Active", key=f"set_{bid}"):
-            with DBManager.get_business_db() as conn:
-                conn.execute("UPDATE user_preferences SET active_business_id = ? WHERE user_id = ?", (bid, st.session_state.user_id))
+            DBManager.execute(
+                "UPDATE user_preferences SET active_business_id = :bid WHERE user_id = :uid",
+                {"bid": bid, "uid": st.session_state.user_id}
+            )
             st.session_state.active_business_id = bid
             st.rerun()
         if cols[2].button("Edit", key=f"edit_{bid}"):
             st.session_state[f"edit_{bid}"] = True
         if not active and cols[3].button("Delete", key=f"del_{bid}"):
-            with DBManager.get_business_db() as conn:
-                conn.execute("DELETE FROM transactions WHERE business_id = ?", (bid,))
-                conn.execute("DELETE FROM businesses WHERE id = ?", (bid,))
+            DBManager.execute("DELETE FROM transactions WHERE business_id = :bid", {"bid": bid})
+            DBManager.execute("DELETE FROM businesses WHERE id = :bid", {"bid": bid})
             st.success(f"Deleted {row['business_name']}")
             st.rerun()
 
@@ -914,9 +1122,12 @@ def page_businesses():
                     na = st.text_area("Address", row['address'] or '')
                     np_ = st.text_input("Phone", row['phone'] or '')
                     if st.form_submit_button("Update"):
-                        with DBManager.get_business_db() as conn:
-                            conn.execute("UPDATE businesses SET business_name=?, business_type=?, address=?, phone=? WHERE id=?",
-                                         (nn, nt, na, np_, bid))
+                        DBManager.execute(
+                            """
+                            UPDATE businesses SET business_name=:name, business_type=:typ, address=:addr, phone=:phone WHERE id=:bid
+                            """,
+                            {"name": nn, "typ": nt, "addr": na, "phone": np_, "bid": bid}
+                        )
                         st.success("Updated")
                         st.session_state[f"edit_{bid}"] = False
                         st.rerun()
@@ -944,9 +1155,14 @@ def page_add_transaction():
                 st.error("Amount must be >0")
             else:
                 dt = datetime.combine(tdate, datetime.min.time())
-                with DBManager.get_business_db() as conn:
-                    conn.execute("INSERT INTO transactions (user_id, business_id, type, amount, category, description, date) VALUES (?,?,?,?,?,?,?)",
-                                 (st.session_state.user_id, st.session_state.active_business_id, typ, amt, cat, desc, dt))
+                DBManager.execute(
+                    """
+                    INSERT INTO transactions (user_id, business_id, type, amount, category, description, date)
+                    VALUES (:uid, :bid, :typ, :amt, :cat, :desc, :dt)
+                    """,
+                    {"uid": st.session_state.user_id, "bid": st.session_state.active_business_id,
+                     "typ": typ, "amt": amt, "cat": cat, "desc": desc, "dt": dt}
+                )
                 st.success("Transaction added!")
                 st.rerun()
 
@@ -955,9 +1171,11 @@ def page_view_transactions():
     if not st.session_state.active_business_id:
         st.warning("No active business.")
         return
-    with DBManager.get_business_db() as conn:
-        df = pd.read_sql("SELECT id, type, amount, category, description, date FROM transactions WHERE user_id=? AND business_id=? ORDER BY date DESC",
-                         conn, params=(st.session_state.user_id, st.session_state.active_business_id))
+    rows = DBManager.fetch_all(
+        "SELECT id, type, amount, category, description, date FROM transactions WHERE user_id = :uid AND business_id = :bid ORDER BY date DESC",
+        {"uid": st.session_state.user_id, "bid": st.session_state.active_business_id}
+    )
+    df = pd.DataFrame(rows, columns=['id', 'type', 'amount', 'category', 'description', 'date'])
     if df.empty:
         st.info("No transactions.")
         return
@@ -977,10 +1195,12 @@ def page_view_transactions():
         num_rows="dynamic" if can_delete_transactions() else "fixed"
     )
     if can_edit_transactions() and st.button("Save Changes"):
-        with DBManager.get_business_db() as conn:
-            for _, r in edited.iterrows():
-                conn.execute("UPDATE transactions SET type=?, amount=?, category=?, description=? WHERE id=? AND user_id=?",
-                             (r['type'], r['amount'], r['category'], r['description'], r['id'], st.session_state.user_id))
+        for _, r in edited.iterrows():
+            DBManager.execute(
+                "UPDATE transactions SET type = :typ, amount = :amt, category = :cat, description = :desc WHERE id = :id AND user_id = :uid",
+                {"typ": r['type'], "amt": r['amount'], "cat": r['category'], "desc": r['description'],
+                 "id": r['id'], "uid": st.session_state.user_id}
+            )
         st.success("Saved")
         st.rerun()
     st.download_button("Download CSV", df.to_csv(index=False), "transactions.csv")
@@ -1049,12 +1269,14 @@ def page_import_transactions():
                 if desc_col != "None" and pd.notna(row[desc_col]):
                     desc = str(row[desc_col])[:200]
 
-                with DBManager.get_business_db() as conn:
-                    conn.execute("""
-                        INSERT INTO transactions (user_id, business_id, type, amount, category, description)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (st.session_state.user_id, st.session_state.active_business_id,
-                          ttype, amt, cat, desc))
+                DBManager.execute(
+                    """
+                    INSERT INTO transactions (user_id, business_id, type, amount, category, description)
+                    VALUES (:uid, :bid, :typ, :amt, :cat, :desc)
+                    """,
+                    {"uid": st.session_state.user_id, "bid": st.session_state.active_business_id,
+                     "typ": ttype, "amt": amt, "cat": cat, "desc": desc}
+                )
                 success += 1
 
             except Exception as e:
@@ -1082,14 +1304,17 @@ def page_sales_dashboard():
     if not st.session_state.active_business_id:
         st.warning("No active business")
         return
-    with DBManager.get_business_db() as conn:
-        df = pd.read_sql("SELECT type, amount, category, date FROM transactions WHERE user_id=? AND business_id=?",
-                         conn, params=(st.session_state.user_id, st.session_state.active_business_id))
+    rows = DBManager.fetch_all(
+        "SELECT type, amount, category, date FROM transactions WHERE user_id = :uid AND business_id = :bid",
+        {"uid": st.session_state.user_id, "bid": st.session_state.active_business_id}
+    )
+    df = pd.DataFrame(rows, columns=['type', 'amount', 'category', 'date'])
     if df.empty:
         st.info("No data")
         return
-    sales = df[df['type']=='Sales']
-    exps = df[df['type']=='Expense']
+    df['date'] = pd.to_datetime(df['date'])
+    sales = df[df['type'] == 'Sales']
+    exps = df[df['type'] == 'Expense']
 
     if not sales.empty:
         sales_cat = sales.groupby('category')['amount'].sum().reset_index()
@@ -1105,7 +1330,6 @@ def page_sales_dashboard():
                          color='category', color_discrete_sequence=colors)
         st.plotly_chart(fig_exp, use_container_width=True)
 
-    df['date'] = pd.to_datetime(df['date'])
     df['month'] = df['date'].dt.to_period('M').astype(str)
     monthly = df.groupby(['month','type'])['amount'].sum().reset_index()
     if not monthly.empty:
@@ -1222,36 +1446,47 @@ def page_analyze_data():
 
 def page_profile():
     st.title("Profile")
-    with DBManager.get_user_db() as conn:
-        user = conn.execute("SELECT * FROM users WHERE id = ?", (st.session_state.user_id,)).fetchone()
+    user = DBManager.fetch_one(
+        "SELECT * FROM users WHERE id = :uid",
+        {"uid": st.session_state.user_id}
+    )
     if not user:
         st.error("User not found")
         return
 
+    # Unpack columns (id, username, email, password, role, dob, gender, created_at)
+    username, email, role, dob, gender, created_at = user[1], user[2], user[4], user[5], user[6], user[7]
+
     col1, col2 = st.columns(2)
     with col1:
-        st.write(f"**Username:** {user['username']}")
-        st.write(f"**Email:** {user['email']}")
-        st.write(f"**Role:** {user['role']}")
+        st.write(f"**Username:** {username}")
+        st.write(f"**Email:** {email}")
+        st.write(f"**Role:** {role}")
+        st.write(f"**Date of Birth:** {dob}")
+        st.write(f"**Gender:** {gender}")
     with col2:
-        if user['created_at']:
-            st.write(f"**Member since:** {user['created_at']}")
+        st.write(f"**Member since:** {created_at}")
 
     st.divider()
     with st.form("update_profile"):
-        new_email = st.text_input("New Email", user['email'])
+        new_email = st.text_input("New Email", email)
         new_pw = st.text_input("New Password", type="password")
         confirm = st.text_input("Confirm Password", type="password")
         if st.form_submit_button("Update Profile", use_container_width=True):
             if new_pw and new_pw != confirm:
                 st.error("Passwords do not match. Please re-enter.")
             else:
-                with DBManager.get_user_db() as conn:
-                    if new_pw:
-                        hashed = AuthManager.hash_password(new_pw)
-                        conn.execute("UPDATE users SET email=?, password=? WHERE id=?", (new_email, hashed, st.session_state.user_id))
-                    else:
-                        conn.execute("UPDATE users SET email=? WHERE id=?", (new_email, st.session_state.user_id))
+                if new_pw:
+                    hashed = AuthManager.hash_password(new_pw)
+                    DBManager.execute(
+                        "UPDATE users SET email = :email, password = :pw WHERE id = :uid",
+                        {"email": new_email, "pw": hashed, "uid": st.session_state.user_id}
+                    )
+                else:
+                    DBManager.execute(
+                        "UPDATE users SET email = :email WHERE id = :uid",
+                        {"email": new_email, "uid": st.session_state.user_id}
+                    )
                 st.success("Profile updated successfully")
                 st.rerun()
 
@@ -1260,13 +1495,7 @@ def page_profile():
         st.warning("Deleting your account is irreversible. All your data will be permanently removed.")
         confirm = st.checkbox("I understand the consequences")
         if st.form_submit_button("Delete My Account", use_container_width=True) and confirm:
-            with DBManager.get_business_db() as b_conn:
-                b_conn.execute("DELETE FROM transactions WHERE user_id = ?", (st.session_state.user_id,))
-                b_conn.execute("DELETE FROM businesses WHERE user_id = ?", (st.session_state.user_id,))
-                b_conn.execute("DELETE FROM products WHERE user_id = ?", (st.session_state.user_id,))
-                b_conn.execute("DELETE FROM user_preferences WHERE user_id = ?", (st.session_state.user_id,))
-            with DBManager.get_user_db() as conn:
-                conn.execute("DELETE FROM users WHERE id = ?", (st.session_state.user_id,))
+            Admin.delete_user(st.session_state.user_id)
             logout()
             st.success("Account deleted. Redirecting...")
             st.rerun()
@@ -1337,12 +1566,15 @@ def page_inventory():
 
     tabs = st.tabs(["Products", "Add Product", "Movement", "History"])
     with tabs[0]:
-        with DBManager.get_business_db() as conn:
-            prods = pd.read_sql("""
-                SELECT product_name, sku, quantity, cost_price, selling_price, reorder_level, category,
-                       (quantity*cost_price) as stock_value
-                FROM products WHERE user_id=? AND business_id=? ORDER BY product_name
-            """, conn, params=(st.session_state.user_id, st.session_state.active_business_id))
+        prods_rows = DBManager.fetch_all(
+            """
+            SELECT product_name, sku, quantity, cost_price, selling_price, reorder_level, category,
+                   (quantity * cost_price) as stock_value
+            FROM products WHERE user_id = :uid AND business_id = :bid ORDER BY product_name
+            """,
+            {"uid": st.session_state.user_id, "bid": st.session_state.active_business_id}
+        )
+        prods = pd.DataFrame(prods_rows, columns=['product_name','sku','quantity','cost_price','selling_price','reorder_level','category','stock_value'])
         if prods.empty:
             st.info("No products")
         else:
@@ -1370,9 +1602,11 @@ def page_inventory():
                 else:
                     st.error("Please fill all required fields.")
     with tabs[2]:
-        with DBManager.get_business_db() as conn:
-            plist = pd.read_sql("SELECT id, product_name, quantity FROM products WHERE user_id=? AND business_id=?",
-                                conn, params=(st.session_state.user_id, st.session_state.active_business_id))
+        plist_rows = DBManager.fetch_all(
+            "SELECT id, product_name, quantity FROM products WHERE user_id = :uid AND business_id = :bid",
+            {"uid": st.session_state.user_id, "bid": st.session_state.active_business_id}
+        )
+        plist = pd.DataFrame(plist_rows, columns=['id','product_name','quantity'])
         if plist.empty:
             st.warning("Add products first")
         else:
@@ -1401,14 +1635,17 @@ def page_inventory():
                     else:
                         st.error("Quantity must be positive.")
     with tabs[3]:
-        with DBManager.get_business_db() as conn:
-            hist = pd.read_sql("""
-                SELECT sm.movement_date, p.product_name, sm.movement_type, sm.quantity,
-                       sm.unit_cost, sm.unit_price, sm.notes
-                FROM stock_movements sm JOIN products p ON sm.product_id = p.id
-                WHERE p.user_id = ? AND p.business_id = ?
-                ORDER BY sm.movement_date DESC LIMIT 100
-            """, conn, params=(st.session_state.user_id, st.session_state.active_business_id))
+        hist_rows = DBManager.fetch_all(
+            """
+            SELECT sm.movement_date, p.product_name, sm.movement_type, sm.quantity,
+                   sm.unit_cost, sm.unit_price, sm.notes
+            FROM stock_movements sm JOIN products p ON sm.product_id = p.id
+            WHERE p.user_id = :uid AND p.business_id = :bid
+            ORDER BY sm.movement_date DESC LIMIT 100
+            """,
+            {"uid": st.session_state.user_id, "bid": st.session_state.active_business_id}
+        )
+        hist = pd.DataFrame(hist_rows, columns=['movement_date','product_name','movement_type','quantity','unit_cost','unit_price','notes'])
         if hist.empty:
             st.info("No movements")
         else:
@@ -1422,17 +1659,20 @@ def page_cogs():
     if not st.session_state.active_business_id:
         st.warning("Select active business")
         return
-    with DBManager.get_business_db() as conn:
-        df = pd.read_sql("""
-            SELECT strftime('%Y-%m', t.date) as month,
-                   COUNT(DISTINCT t.id) as sales,
-                   SUM(t.amount) as revenue,
-                   COALESCE(SUM(sm.quantity * sm.unit_cost), 0) as cogs
-            FROM transactions t
-            LEFT JOIN stock_movements sm ON t.id = sm.reference_id AND sm.movement_type = 'sale'
-            WHERE t.user_id = ? AND t.business_id = ? AND t.type = 'Sales'
-            GROUP BY month ORDER BY month DESC
-        """, conn, params=(st.session_state.user_id, st.session_state.active_business_id))
+    rows = DBManager.fetch_all(
+        """
+        SELECT strftime('%Y-%m', t.date) as month,
+               COUNT(DISTINCT t.id) as sales,
+               SUM(t.amount) as revenue,
+               COALESCE(SUM(sm.quantity * sm.unit_cost), 0) as cogs
+        FROM transactions t
+        LEFT JOIN stock_movements sm ON t.id = sm.reference_id AND sm.movement_type = 'sale'
+        WHERE t.user_id = :uid AND t.business_id = :bid AND t.type = 'Sales'
+        GROUP BY month ORDER BY month DESC
+        """,
+        {"uid": st.session_state.user_id, "bid": st.session_state.active_business_id}
+    )
+    df = pd.DataFrame(rows, columns=['month','sales','revenue','cogs'])
     if df.empty:
         st.info("No COGS data")
         return
@@ -1472,9 +1712,11 @@ def page_sales_trends():
     if not st.session_state.active_business_id:
         st.warning("Select active business")
         return
-    with DBManager.get_business_db() as conn:
-        df = pd.read_sql("SELECT date, amount FROM transactions WHERE user_id=? AND business_id=? AND type='Sales' ORDER BY date",
-                         conn, params=(st.session_state.user_id, st.session_state.active_business_id))
+    rows = DBManager.fetch_all(
+        "SELECT date, amount FROM transactions WHERE user_id = :uid AND business_id = :bid AND type='Sales' ORDER BY date",
+        {"uid": st.session_state.user_id, "bid": st.session_state.active_business_id}
+    )
+    df = pd.DataFrame(rows, columns=['date', 'amount'])
     if df.empty:
         st.info("No sales")
         return
@@ -1498,9 +1740,11 @@ def page_profit_margins():
     if not st.session_state.active_business_id:
         st.warning("Select active business")
         return
-    with DBManager.get_business_db() as conn:
-        df = pd.read_sql("SELECT date, type, amount FROM transactions WHERE user_id=? AND business_id=? ORDER BY date",
-                         conn, params=(st.session_state.user_id, st.session_state.active_business_id))
+    rows = DBManager.fetch_all(
+        "SELECT date, type, amount FROM transactions WHERE user_id = :uid AND business_id = :bid ORDER BY date",
+        {"uid": st.session_state.user_id, "bid": st.session_state.active_business_id}
+    )
+    df = pd.DataFrame(rows, columns=['date', 'type', 'amount'])
     if df.empty:
         st.info("No data")
         return
@@ -1552,10 +1796,10 @@ def page_expense_categories():
         st.info("No expenses")
     else:
         colors = get_color_sequence(len(df_exp), 'Pastel')
-        fig_exp = px.pie(df_exp, values='total', names='category',
+        fig_exp = px.pie(df_exp, values='amount', names='category',
                          title=f"Expenses {period}", color_discrete_sequence=colors)
         st.plotly_chart(fig_exp, use_container_width=True)
-        df_exp['total'] = df_exp['total'].apply(lambda x: f"{st.session_state.currency_symbol}{x:,.2f}")
+        df_exp['amount'] = df_exp['amount'].apply(lambda x: f"{st.session_state.currency_symbol}{x:,.2f}")
         st.dataframe(df_exp)
 
     st.divider()
@@ -1565,11 +1809,11 @@ def page_expense_categories():
         st.info("No sales")
     else:
         colors = get_color_sequence(len(df_sales), 'Bold')
-        fig_sales = px.bar(df_sales, x='category', y='total',
+        fig_sales = px.bar(df_sales, x='category', y='amount',
                            title=f"Sales {period}", color='category',
                            color_discrete_sequence=colors)
         st.plotly_chart(fig_sales, use_container_width=True)
-        df_sales['total'] = df_sales['total'].apply(lambda x: f"{st.session_state.currency_symbol}{x:,.2f}")
+        df_sales['amount'] = df_sales['amount'].apply(lambda x: f"{st.session_state.currency_symbol}{x:,.2f}")
         st.dataframe(df_sales)
 
 def page_forecasting():
@@ -1577,13 +1821,18 @@ def page_forecasting():
     if not st.session_state.active_business_id:
         st.warning("Select active business")
         return
-    with DBManager.get_business_db() as conn:
-        s = conn.execute("SELECT COUNT(*), MIN(date), MAX(date) FROM transactions WHERE user_id=? AND business_id=? AND type='Sales'",
-                         (st.session_state.user_id, st.session_state.active_business_id)).fetchone()
-        e = conn.execute("SELECT COUNT(*) FROM transactions WHERE user_id=? AND business_id=? AND type='Expense'",
-                         (st.session_state.user_id, st.session_state.active_business_id)).fetchone()[0]
-        distinct = conn.execute("SELECT COUNT(DISTINCT date) FROM transactions WHERE user_id=? AND business_id=? AND type='Sales'",
-                                (st.session_state.user_id, st.session_state.active_business_id)).fetchone()[0]
+    s = DBManager.fetch_one(
+        "SELECT COUNT(*), MIN(date), MAX(date) FROM transactions WHERE user_id = :uid AND business_id = :bid AND type='Sales'",
+        {"uid": st.session_state.user_id, "bid": st.session_state.active_business_id}
+    )
+    e = DBManager.fetch_one(
+        "SELECT COUNT(*) FROM transactions WHERE user_id = :uid AND business_id = :bid AND type='Expense'",
+        {"uid": st.session_state.user_id, "bid": st.session_state.active_business_id}
+    )[0]
+    distinct = DBManager.fetch_one(
+        "SELECT COUNT(DISTINCT date) FROM transactions WHERE user_id = :uid AND business_id = :bid AND type='Sales'",
+        {"uid": st.session_state.user_id, "bid": st.session_state.active_business_id}
+    )[0]
     sales_cnt, min_dt, max_dt = s
     col1, col2 = st.columns(2)
     col1.metric("Sales Records", sales_cnt)
@@ -1689,9 +1938,11 @@ def page_report_generation():
         send_email = st.checkbox("Send report via email")
         if send_email:
             email_to = st.text_input("Recipient Email")
-            with DBManager.get_user_db() as conn:
-                user = conn.execute("SELECT email FROM users WHERE id = ?", (st.session_state.user_id,)).fetchone()
-            owner_email = user['email'] if user else ""
+            user = DBManager.fetch_one(
+                "SELECT email FROM users WHERE id = :uid",
+                {"uid": st.session_state.user_id}
+            )
+            owner_email = user[0] if user else ""
             st.info(f"Report will be sent from your registered email: {owner_email}")
         else:
             email_to = None
@@ -1732,9 +1983,11 @@ def page_report_generation():
                 filename = f"report_{start_date}_to_{end_date}.pdf"
 
             if send_email and email_to:
-                with DBManager.get_user_db() as conn:
-                    user = conn.execute("SELECT email FROM users WHERE id = ?", (st.session_state.user_id,)).fetchone()
-                from_email = user['email'] if user else "business-analyzer@localhost"
+                user = DBManager.fetch_one(
+                    "SELECT email FROM users WHERE id = :uid",
+                    {"uid": st.session_state.user_id}
+                )
+                from_email = user[0] if user else "business-analyzer@localhost"
                 subject = f"Business Report {start_date} to {end_date}"
                 body = f"Please find attached your business report for period {start_date} to {end_date}."
                 ok, msg = send_email_simple(email_to, subject, body, attachment, filename, from_email)
@@ -1747,10 +2000,30 @@ def page_report_generation():
 
 def page_admin_dashboard():
     st.title("Admin Dashboard")
-    if not is_owner():
-        st.error("Access denied. This page is for Owners only.")
+
+    # Only managers can attempt
+    if st.session_state.role != "Manager":
+        st.error("Only managers can access the Admin Dashboard.")
         return
 
+    # Password check (once per session)
+    if not st.session_state.get('admin_authenticated', False):
+        with st.form("admin_password_form"):
+            password = st.text_input("Enter Admin Password", type="password")
+            if st.form_submit_button("Access Dashboard"):
+                if password == Config.ADMIN_PASSWORD:
+                    st.session_state.admin_authenticated = True
+                    # Log access
+                    DBManager.execute(
+                        "INSERT INTO admin_access_logs (user_id) VALUES (:uid)",
+                        {"uid": st.session_state.user_id}
+                    )
+                    st.rerun()
+                else:
+                    st.error("Incorrect password.")
+        return
+
+    # Dashboard content
     stats = Admin.get_system_stats()
     show_metric_row([
         ("Total Users", stats['users'], None),
@@ -1760,17 +2033,19 @@ def page_admin_dashboard():
     ])
 
     st.divider()
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["User Management", "Login History", "Admin Access Logs", "Change Passwords", "System Settings"])
 
-    tab1, tab2, tab3 = st.tabs(["User Management", "System Health", "System Settings"])
-
+    # --- Tab 1: User Management ---
     with tab1:
         st.subheader("User Management")
         users_df = Admin.get_all_users_with_stats()
         if users_df.empty:
             st.info("No users found.")
         else:
+            st.dataframe(users_df[['username','email','role','dob','gender','business_count','transaction_count']])
+            # Delete user UI (same as before but using DBManager)
             for idx, row in users_df.iterrows():
-                cols = st.columns([2, 2, 1, 1, 1, 1])
+                cols = st.columns([2,2,1,1,1,1])
                 cols[0].write(f"**{row['username']}**")
                 cols[1].write(row['email'])
                 cols[2].write(row['role'])
@@ -1795,40 +2070,78 @@ def page_admin_dashboard():
                 else:
                     cols[5].write("(You)")
 
+    # --- Tab 2: Login History ---
     with tab2:
-        st.subheader("System Health & Data Quality")
-
-        daily_df = Admin.get_daily_transaction_volume(30)
-        if not daily_df.empty:
-            fig = px.bar(daily_df, x='day', y='count', title="Daily Transaction Volume (Last 30 Days)",
-                         labels={'day': 'Date', 'count': 'Transactions'})
-            st.plotly_chart(fig, use_container_width=True)
-
-        total_tx, missing_cat = Admin.get_category_completeness()
-        if total_tx > 0:
-            completeness = ((total_tx - missing_cat) / total_tx) * 100
-            st.metric("Category Completeness", f"{completeness:.1f}%", f"{missing_cat} missing")
+        st.subheader("User Login History")
+        role_filter = st.selectbox("Filter by role", ["All", "Owner", "Accountant", "Staff", "Manager"])
+        rows = DBManager.fetch_all(
+            """
+            SELECT u.username, u.role, lh.login_time, lh.logout_time, lh.session_duration
+            FROM login_history lh
+            JOIN users u ON lh.user_id = u.id
+            WHERE (:role = 'All' OR u.role = :role)
+            ORDER BY lh.login_time DESC
+            """,
+            {"role": role_filter}
+        )
+        df_logins = pd.DataFrame(rows, columns=['username','role','login_time','logout_time','session_duration'])
+        if df_logins.empty:
+            st.info("No login records.")
         else:
-            st.info("No transaction data yet.")
+            # Format timestamps
+            df_logins['login_time'] = pd.to_datetime(df_logins['login_time']).dt.strftime('%Y-%m-%d %H:%M:%S')
+            df_logins['logout_time'] = pd.to_datetime(df_logins['logout_time']).dt.strftime('%Y-%m-%d %H:%M:%S') if df_logins['logout_time'].notna().any() else None
+            df_logins['session_duration'] = df_logins['session_duration'].apply(lambda x: f"{x} sec" if pd.notna(x) else "Active")
+            st.dataframe(df_logins)
 
-        top_users = Admin.get_top_users_by_transactions()
-        if not top_users.empty:
-            fig = px.bar(top_users, x='username', y='tx_count', title="Top Users by Transactions",
-                         labels={'username': 'User', 'tx_count': 'Transactions'})
-            st.plotly_chart(fig, use_container_width=True)
-
+    # --- Tab 3: Admin Access Logs ---
     with tab3:
-        st.subheader("System Settings")
+        st.subheader("Manager Admin Access Logs")
+        rows = DBManager.fetch_all(
+            """
+            SELECT a.access_time, u.username, u.role
+            FROM admin_access_logs a
+            JOIN users u ON a.user_id = u.id
+            ORDER BY a.access_time DESC
+            """
+        )
+        df_admin = pd.DataFrame(rows, columns=['access_time','username','role'])
+        if df_admin.empty:
+            st.info("No admin access records.")
+        else:
+            df_admin['access_time'] = pd.to_datetime(df_admin['access_time']).dt.strftime('%Y-%m-%d %H:%M:%S')
+            st.dataframe(df_admin)
 
+    # --- Tab 4: Change Passwords ---
+    with tab4:
+        st.subheader("Change User Password")
+        users = DBManager.fetch_all("SELECT id, username FROM users")
+        user_options = {u[0]: u[1] for u in users}
+        selected_user_id = st.selectbox("Select User", options=list(user_options.keys()), format_func=lambda x: user_options[x])
+        new_password = st.text_input("New Password", type="password")
+        confirm_password = st.text_input("Confirm New Password", type="password")
+        if st.button("Update Password"):
+            if new_password != confirm_password:
+                st.error("Passwords do not match.")
+            elif not new_password:
+                st.error("Password cannot be empty.")
+            else:
+                Admin.change_user_password(selected_user_id, new_password)
+                st.success(f"Password updated for user {user_options[selected_user_id]}.")
+
+    # --- Tab 5: System Settings ---
+    with tab5:
+        st.subheader("System Settings")
         with st.form("system_settings_form"):
             currency = st.text_input("Currency Symbol", value=st.session_state.currency_symbol,
                                      help="Symbol used for monetary values (e.g., ₹, $, €)")
             default_reorder = st.number_input("Default Reorder Level", value=st.session_state.default_reorder_level,
                                               step=0.5, help="Default reorder threshold for new products")
             if st.form_submit_button("Save Settings", use_container_width=True):
-                with DBManager.get_business_db() as conn:
-                    conn.execute("UPDATE user_preferences SET currency_symbol = ?, default_reorder_level = ? WHERE user_id = ?",
-                                 (currency, default_reorder, st.session_state.user_id))
+                DBManager.execute(
+                    "UPDATE user_preferences SET currency_symbol = :cur, default_reorder_level = :reorder WHERE user_id = :uid",
+                    {"cur": currency, "reorder": default_reorder, "uid": st.session_state.user_id}
+                )
                 st.session_state.currency_symbol = currency
                 st.session_state.default_reorder_level = default_reorder
                 st.success("Settings saved.")
@@ -1848,12 +2161,11 @@ def render_sidebar():
             st.write(f"**Welcome,** {st.session_state.username}  \nRole: {st.session_state.role}")
             st.divider()
 
-            # Navigation groups
             nav = {
                 "Core": ["Dashboard", "Sales Dashboard", "View Transactions", "Add Transaction"],
                 "Business Intelligence": ["Profit Dashboard", "Inventory", "COGS Analysis", "Businesses"],
                 "Advanced": ["Sales Trends", "Forecasting", "Profit Margins", "Expense Categories"],
-                "Reports & Admin": ["Generate Report"] + (["Admin Dashboard"] if is_owner() else []),
+                "Reports & Admin": ["Generate Report"] + (["Admin Dashboard"] if st.session_state.role == 'Manager' else []),
                 "Data": ["Import Transactions", "Analyze Data"],
                 "Account": ["Profile", "Logout"]
             }
@@ -1863,8 +2175,13 @@ def render_sidebar():
                 cols = st.columns(2)
                 for i, page in enumerate(pages):
                     with cols[i % 2]:
-                        if st.button(page, use_container_width=True, key=f"nav_{page}"):
-                            set_page(page)
+                        if page == "Logout":
+                            if st.button(page, use_container_width=True, key=f"nav_{page}"):
+                                logout()
+                                st.rerun()
+                        else:
+                            if st.button(page, use_container_width=True, key=f"nav_{page}"):
+                                set_page(page)
                 st.divider()
         else:
             for page in ["Home", "Login", "Sign Up"]:
@@ -1881,12 +2198,10 @@ def main():
         page_icon="📊",
         initial_sidebar_state="expanded"
     )
-    DBManager.init_user_db()
-    DBManager.init_business_db()
+    DBManager.init_db()
     init_session()
     render_sidebar()
 
-    # Page routing
     pages = {
         "Home": page_home,
         "Login": page_login,
@@ -1920,5 +2235,5 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except sqlite3.Error as e:
-        st.error(f"Database connection failed: {e}")
+    except Exception as e:
+        st.error(f"Application error: {e}")
