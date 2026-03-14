@@ -1,10 +1,12 @@
 streamlit
 pandas
-plotly
+numpy
 bcrypt
 pyjwt
+sqlalchemy
+plotly
+openpyxl
+fpdf
+smtplib
 scikit-learn
 prophet
-numpy
-openpyxl
-fpdf2
