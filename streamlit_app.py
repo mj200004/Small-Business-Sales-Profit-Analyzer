@@ -3,6 +3,7 @@
 Business Analyzer – Production Ready – ULTIMATE FIXED VERSION
 All milestones + requested enhancements.
 Uses dictionary-style row access to guarantee user_id is never None.
+Includes robust whitespace trimming and case-insensitive matching for login.
 """
 
 import streamlit as st
@@ -263,9 +264,12 @@ class AuthManager:
         Returns user dict with guaranteed user_id.
         Uses ._mapping for safe column access.
         """
+        # Trim whitespace and convert to lower for robust matching
+        login_input = username_or_email.strip().lower()
+
         row = DBManager.fetch_one(
-            "SELECT id, username, email, password, role FROM users WHERE username = :login OR email = :login",
-            {"login": username_or_email}
+            "SELECT id, username, email, password, role FROM users WHERE LOWER(username) = :login OR LOWER(email) = :login",
+            {"login": login_input}
         )
 
         if not row:
@@ -276,7 +280,7 @@ class AuthManager:
 
         # Safety check: id must exist and not be None
         if "id" not in user or user["id"] is None:
-            return {"success": False, "message": "Database error: user ID is missing"}
+            return {"success": False, "message": "Database error: user ID is missing after retrieval"}
 
         user_id = user["id"]
         username = user["username"]
@@ -299,7 +303,7 @@ class AuthManager:
             st.warning(f"Login tracking failed: {e}")
             st.session_state.current_login_id = None
 
-        # Load preferences
+        # Load preferences, create if not exists (should ideally be created at signup)
         pref = DBManager.fetch_one(
             "SELECT active_business_id, currency_symbol, default_reorder_level FROM user_preferences WHERE user_id = :uid",
             {"uid": user_id}
@@ -309,18 +313,31 @@ class AuthManager:
             st.session_state.currency_symbol = pref._mapping["currency_symbol"]
             st.session_state.default_reorder_level = pref._mapping["default_reorder_level"]
         else:
-            # This case should ideally not happen if preferences are created at signup
-            # But as a fallback, create default preferences if none exist
+            # Create default preferences if none exist for this user
             try:
                 DBManager.execute(
                     "INSERT INTO user_preferences (user_id) VALUES (:uid)",
                     {"uid": user_id}
                 )
+                st.session_state.active_business_id = None
+                st.session_state.currency_symbol = '₹'
+                st.session_state.default_reorder_level = 5.0
             except sa.exc.IntegrityError: # Catch if another process/rerun already created it
-                pass
-            st.session_state.active_business_id = None
-            st.session_state.currency_symbol = '₹'
-            st.session_state.default_reorder_level = 5.0
+                # This can happen if two reruns try to create preferences simultaneously
+                # Re-fetch preferences if this occurs
+                pref_retry = DBManager.fetch_one(
+                    "SELECT active_business_id, currency_symbol, default_reorder_level FROM user_preferences WHERE user_id = :uid",
+                    {"uid": user_id}
+                )
+                if pref_retry:
+                    st.session_state.active_business_id = pref_retry._mapping["active_business_id"]
+                    st.session_state.currency_symbol = pref_retry._mapping["currency_symbol"]
+                    st.session_state.default_reorder_level = pref_retry._mapping["default_reorder_level"]
+                else:
+                    st.error("Failed to load or create user preferences.")
+                    st.session_state.active_business_id = None
+                    st.session_state.currency_symbol = '₹'
+                    st.session_state.default_reorder_level = 5.0
 
         return {
             "success": True,
@@ -528,7 +545,8 @@ class Analytics:
             "total_expenses": total_expenses, "gross_profit": gross_profit,
             "net_profit": net_profit, "gross_margin": gross_margin,
             "net_margin": net_margin, "period_profit": period_profit,
-            "period_sales": period_sales, "transaction_count": len(df)
+            "period_sales": period_sales,
+            "transaction_count": len(df)
         }
 
     @staticmethod
@@ -716,8 +734,8 @@ def page_login():
 def page_signup():
     st.title("Sign Up")
     with st.form("signup_form"):
-        username = st.text_input("Username")
-        email = st.text_input("Email")
+        username = st.text_input("Username").strip() # Trim whitespace
+        email = st.text_input("Email").strip() # Trim whitespace
         password = st.text_input("Password", type="password")
         confirm_password = st.text_input("Confirm Password", type="password")
         dob = st.date_input("Date of Birth", min_value=date(1900, 1, 1), max_value=date.today())
@@ -739,26 +757,18 @@ def page_signup():
                     )
 
                     if user_id:
-                        # Explicitly fetch the user to ensure the ID is correct and committed
-                        new_user_row = DBManager.fetch_one(
-                            "SELECT id, username, email, role FROM users WHERE id = :uid",
-                            {"uid": user_id}
-                        )
-                        if new_user_row:
-                            new_user = dict(new_user_row._mapping)
-                            # Create user preferences if they don't exist
-                            existing_pref = DBManager.fetch_one("SELECT user_id FROM user_preferences WHERE user_id = :uid", {"uid": user_id})
-                            if not existing_pref:
-                                DBManager.execute(
-                                    "INSERT INTO user_preferences (user_id) VALUES (:uid)",
-                                    {"uid": user_id}
-                                )
+                        # Ensure user preferences are created immediately after successful signup
+                        try:
+                            DBManager.execute(
+                                "INSERT INTO user_preferences (user_id) VALUES (:uid)",
+                                {"uid": user_id}
+                            )
+                        except sa.exc.IntegrityError: # Handle case where preferences might already exist (e.g., during reruns)
+                            pass # Preferences already exist, no need to create again
 
-                            st.success("Account created successfully! You can now log in.")
-                            set_page("Login")
-                            st.rerun()
-                        else:
-                            st.error("Failed to retrieve new user data after signup. Please try logging in.")
+                        st.success("Account created successfully! You can now log in.")
+                        set_page("Login")
+                        st.rerun()
                     else:
                         st.error("Failed to create account. Please try again.")
                 except sa.exc.IntegrityError as e:
