@@ -4,6 +4,7 @@ Business Analyzer – Production Ready – ULTIMATE FIXED VERSION
 All milestones + requested enhancements.
 Uses dictionary-style row access to guarantee user_id is never None.
 Includes robust whitespace trimming and case-insensitive matching for login.
+Enhanced fail-safe user ID retrieval in AuthManager.login.
 """
 
 import streamlit as st
@@ -275,18 +276,60 @@ class AuthManager:
         if not row:
             return {"success": False, "message": "Invalid username/email or password"}
 
-        # Convert to dictionary for safe named access
-        user = dict(row._mapping)
+        # --- Start of enhanced user_id retrieval and validation ---
+        user_id = None
+        user = None
 
-        # Safety check: id must exist and not be None
-        if "id" not in user or user["id"] is None:
-            return {"success": False, "message": "Database error: user ID is missing after retrieval"}
+        try:
+            user = dict(row._mapping)
+            user_id = user.get("id")
+        except Exception as e:
+            st.error(f"Diagnostic: Error converting row to dict: {e}")
+            st.error(f"Diagnostic: Raw row object: {row}")
 
-        user_id = user["id"]
-        username = user["username"]
-        email = user["email"]
-        password_hash = user["password"]
-        role = user["role"]
+        if user_id is None:
+            # Fallback 1: Try accessing by index if it's a tuple-like object
+            try:
+                if isinstance(row, (tuple, list)) and len(row) > 0:
+                    user_id = row[0] # Assuming 'id' is the first column in the SELECT statement
+                    st.warning(f"Diagnostic: User ID retrieved via tuple index: {user_id}")
+            except Exception as e:
+                st.error(f"Diagnostic: Error accessing row by index: {e}")
+
+        if user_id is None:
+            # Fallback 2: Iterate through keys if _mapping failed or is not dict-like
+            try:
+                for k, v in row.items(): # This might work if row is a dict-like object but not a RowProxy._mapping
+                    if k == 'id':
+                        user_id = v
+                        st.warning(f"Diagnostic: User ID retrieved via key iteration: {user_id}")
+                        break
+            except AttributeError:
+                pass # Not a dict-like object with .items()
+
+        if user_id is None:
+            return {"success": False, "message": "Database error: user ID is missing after multiple retrieval attempts."}
+
+        # Ensure user_id is an integer
+        try:
+            user_id = int(user_id)
+        except (ValueError, TypeError) as e:
+            st.error(f"Diagnostic: User ID {user_id} is not an integer: {e}")
+            return {"success": False, "message": "Database error: user ID is not a valid number."}
+
+        # If user was not successfully converted to dict, create it now for other fields
+        if user is None:
+            user = dict(row._mapping) # Re-attempt conversion now that user_id is confirmed
+
+        username = user.get("username")
+        email = user.get("email")
+        password_hash = user.get("password")
+        role = user.get("role")
+
+        if not all([username, email, password_hash, role]):
+            st.error(f"Diagnostic: Missing user details after ID retrieval. User: {user}")
+            return {"success": False, "message": "Database error: incomplete user data retrieved."}
+        # --- End of enhanced user_id retrieval and validation ---
 
         if not AuthManager.check_password(password, password_hash):
             return {"success": False, "message": "Invalid username/email or password"}
@@ -1160,7 +1203,7 @@ def page_inventory():
                 # Added confirmation step
                 confirm_delete = st.warning(f"Are you sure you want to delete '{product_name_to_delete}' and all its stock movements?")
                 if confirm_delete:
-                    if st.button("Confirm Delete", key="confirm_delete_product"):
+                    if st.button("Confirm Delete", key=f"confirm_delete_product"):
                         DBManager.execute("DELETE FROM products WHERE id = :pid AND user_id = :uid", {"pid": product_to_delete_id, "uid": st.session_state.user_id})
                         st.success(f"Product '{product_name_to_delete}' deleted.")
                         st.rerun()
@@ -1480,7 +1523,7 @@ def page_view_transactions():
             confirm_delete = st.warning(f"Are you sure you want to delete transaction ID {tx_to_delete_id}?")
             if confirm_delete:
                 if st.button("Confirm Delete", key="confirm_delete_tx"):
-                    DBManager.execute("DELETE FROM transactions WHERE id = :tid AND user_id = :uid", {"tid": tx_to_delete_id, "uid": st.session_state.user_id})
+                    DBManager.execute("DELETE FROM transactions WHERE id = :tid AND user_id = :uid", {"tid": tx_to_to_delete_id, "uid": st.session_state.user_id})
                     st.success(f"Transaction ID {tx_to_delete_id} deleted.")
                     st.rerun()
 
