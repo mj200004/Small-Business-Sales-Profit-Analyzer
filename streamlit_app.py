@@ -1,3 +1,4 @@
+
 """
 Business Analyzer – Production Ready – ULTIMATE FIXED VERSION
 All milestones + requested enhancements.
@@ -27,7 +28,7 @@ from email import encoders
 import io
 from fpdf import FPDF
 import warnings
-warnings.filterwarnings('ignore')
+warnings.filterwarnings("ignore")
 
 # Optional imports
 try:
@@ -42,11 +43,10 @@ from sklearn.linear_model import LinearRegression
 # Configuration
 # -----------------------------------------------------------------------------
 class Config:
-    DATABASE_URL = os.environ.get('DATABASE_URL')
-    SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'your-secret-key-change-in-production')
-    JWT_ALGORITHM = 'HS256'
-    # Admin password can now be changed by manager, store in DB
-    # ADMIN_PASSWORD = "Project@123" # Removed, now dynamic
+    DATABASE_URL = os.environ.get("DATABASE_URL")
+    SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "your-secret-key-change-in-production")
+    JWT_ALGORITHM = "HS256"
+    # ADMIN_PASSWORD is now dynamic, stored in DB
 
     @classmethod
     def get_engine(cls):
@@ -198,7 +198,7 @@ class DBManager:
             admin_pw_exists = conn.execute(text("SELECT 1 FROM system_settings WHERE key = 'admin_password'")).fetchone()
             if not admin_pw_exists:
                 hashed_default_admin_pw = AuthManager.hash_password("Project@123")
-                conn.execute(text("INSERT INTO system_settings (key, value) VALUES ('admin_password', :pw)"), {'pw': hashed_default_admin_pw})
+                conn.execute(text("INSERT INTO system_settings (key, value) VALUES ('admin_password', :pw)"), {"pw": hashed_default_admin_pw})
 
     @classmethod
     def execute(cls, query, params=None):
@@ -233,19 +233,19 @@ class DBManager:
 class AuthManager:
     @staticmethod
     def hash_password(password):
-        return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
     @staticmethod
     def check_password(password, hashed):
-        return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+        return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
 
     @staticmethod
     def create_jwt_token(user_id, username, role):
         payload = {
-            'user_id': user_id,
-            'username': username,
-            'role': role,
-            'exp': datetime.utcnow() + timedelta(days=1)
+            "user_id": user_id,
+            "username": username,
+            "role": role,
+            "exp": datetime.utcnow() + timedelta(days=1)
         }
         return jwt.encode(payload, Config.SECRET_KEY, algorithm=Config.JWT_ALGORITHM)
 
@@ -269,23 +269,23 @@ class AuthManager:
         )
 
         if not row:
-            return {'success': False, 'message': 'Invalid username/email or password'}
+            return {"success": False, "message": "Invalid username/email or password"}
 
         # Convert to dictionary for safe named access
         user = dict(row._mapping)
 
         # Safety check: id must exist and not be None
-        if 'id' not in user or user['id'] is None:
-            return {'success': False, 'message': 'Database error: user ID is missing'}
+        if "id" not in user or user["id"] is None:
+            return {"success": False, "message": "Database error: user ID is missing"}
 
-        user_id = user['id']
-        username = user['username']
-        email = user['email']
-        password_hash = user['password']
-        role = user['role']
+        user_id = user["id"]
+        username = user["username"]
+        email = user["email"]
+        password_hash = user["password"]
+        role = user["role"]
 
         if not AuthManager.check_password(password, password_hash):
-            return {'success': False, 'message': 'Invalid username/email or password'}
+            return {"success": False, "message": "Invalid username/email or password"}
 
         # Log login – only if user_id is valid
         try:
@@ -305,33 +305,37 @@ class AuthManager:
             {"uid": user_id}
         )
         if pref:
-            st.session_state.active_business_id = pref._mapping['active_business_id']
-            st.session_state.currency_symbol = pref._mapping['currency_symbol']
-            st.session_state.default_reorder_level = pref._mapping['default_reorder_level']
+            st.session_state.active_business_id = pref._mapping["active_business_id"]
+            st.session_state.currency_symbol = pref._mapping["currency_symbol"]
+            st.session_state.default_reorder_level = pref._mapping["default_reorder_level"]
         else:
-            # Create default preferences if none exist
-            DBManager.execute(
-                "INSERT INTO user_preferences (user_id) VALUES (:uid)",
-                {"uid": user_id}
-            )
+            # This case should ideally not happen if preferences are created at signup
+            # But as a fallback, create default preferences if none exist
+            try:
+                DBManager.execute(
+                    "INSERT INTO user_preferences (user_id) VALUES (:uid)",
+                    {"uid": user_id}
+                )
+            except sa.exc.IntegrityError: # Catch if another process/rerun already created it
+                pass
             st.session_state.active_business_id = None
             st.session_state.currency_symbol = '₹'
             st.session_state.default_reorder_level = 5.0
 
         return {
-            'success': True,
-            'user_id': user_id,
-            'username': username,
-            'email': email,
-            'role': role,
-            'token': AuthManager.create_jwt_token(user_id, username, role)
+            "success": True,
+            "user_id": user_id,
+            "username": username,
+            "email": email,
+            "role": role,
+            "token": AuthManager.create_jwt_token(user_id, username, role)
         }
 
 # -----------------------------------------------------------------------------
 # Session Management
 # -----------------------------------------------------------------------------
 def init_session():
-    if 'logged_in' not in st.session_state:
+    if "logged_in" not in st.session_state:
         st.session_state.logged_in = False
         st.session_state.user_id = None
         st.session_state.username = None
@@ -349,15 +353,15 @@ def set_page(page_name):
     st.session_state.page = page_name
 
 def authenticate():
-    token = st.session_state.get('token')
+    token = st.session_state.get("token")
     if token:
         payload = AuthManager.verify_jwt_token(token)
         if payload:
             st.session_state.logged_in = True
-            st.session_state.user_id = payload['user_id']
-            st.session_state.username = payload['username']
-            st.session_state.email = payload['email']
-            st.session_state.role = payload['role']
+            st.session_state.user_id = payload["user_id"]
+            st.session_state.username = payload["username"]
+            st.session_state.email = payload["email"]
+            st.session_state.role = payload["role"]
             return True
     st.session_state.logged_in = False
     st.session_state.user_id = None
@@ -369,7 +373,7 @@ def authenticate():
     return False
 
 def logout():
-    if st.session_state.get('current_login_id'):
+    if st.session_state.get("current_login_id"):
         DBManager.execute(
             "UPDATE login_history SET logout_time = CURRENT_TIMESTAMP, session_duration = STRFTIME('%s', CURRENT_TIMESTAMP) - STRFTIME('%s', login_time) WHERE id = :lid",
             {"lid": st.session_state.current_login_id}
@@ -425,16 +429,16 @@ class Analytics:
             )
             if not current_qty_row:
                 return False, "Product not found."
-            current_qty = current_qty_row._mapping['quantity']
+            current_qty = current_qty_row._mapping["quantity"]
 
             new_qty = current_qty
-            if movement_type == 'purchase':
+            if movement_type == "purchase":
                 new_qty += quantity
-            elif movement_type == 'sale':
+            elif movement_type == "sale":
                 if current_qty < quantity:
                     return False, "Not enough stock for sale."
                 new_qty -= quantity
-            elif movement_type == 'adjustment':
+            elif movement_type == "adjustment":
                 new_qty += quantity # Adjustment can be positive or negative
             else:
                 return False, "Invalid movement type."
@@ -460,11 +464,11 @@ class Analytics:
             "SELECT quantity, cost_price FROM products WHERE user_id = :uid AND business_id = :bid",
             {"uid": user_id, "bid": business_id}
         )
-        total_value = sum(p._mapping['quantity'] * p._mapping['cost_price'] for p in products) if products else 0
+        total_value = sum(p._mapping["quantity"] * p._mapping["cost_price"] for p in products) if products else 0
         return {
-            'product_count': len(products),
-            'total_units': sum(p._mapping['quantity'] for p in products) if products else 0,
-            'total_value': total_value
+            "product_count": len(products),
+            "total_units": sum(p._mapping["quantity"] for p in products) if products else 0,
+            "total_value": total_value
         }
 
     @staticmethod
@@ -473,22 +477,22 @@ class Analytics:
             "SELECT product_name, sku, quantity, reorder_level FROM products WHERE user_id = :uid AND business_id = :bid AND quantity <= reorder_level ORDER BY product_name",
             {"uid": user_id, "bid": business_id}
         )
-        return pd.DataFrame(rows, columns=['product_name', 'sku', 'quantity', 'reorder_level'])
+        return pd.DataFrame(rows, columns=["product_name", "sku", "quantity", "reorder_level"])
 
     @staticmethod
-    def calculate_profit_metrics(user_id, business_id, period='monthly'):
+    def calculate_profit_metrics(user_id, business_id, period="monthly"):
         rows = DBManager.fetch_all(
             "SELECT date, type, amount, category FROM transactions WHERE user_id = :uid AND business_id = :bid ORDER BY date",
             {"uid": user_id, "bid": business_id}
         )
-        df = pd.DataFrame(rows, columns=['date', 'type', 'amount', 'category'])
+        df = pd.DataFrame(rows, columns=["date", "type", "amount", "category"])
         if df.empty:
             return None
-        df['date'] = pd.to_datetime(df['date'])
-        sales = df[df['type'] == 'Sales']
-        expenses = df[df['type'] == 'Expense']
-        total_revenue = sales['amount'].sum() if not sales.empty else 0
-        total_expenses = expenses['amount'].sum() if not expenses.empty else 0
+        df["date"] = pd.to_datetime(df["date"])
+        sales = df[df["type"] == "Sales"]
+        expenses = df[df["type"] == "Expense"]
+        total_revenue = sales["amount"].sum() if not sales.empty else 0
+        total_expenses = expenses["amount"].sum() if not expenses.empty else 0
 
         cogs_rows = DBManager.fetch_all(
             """
@@ -498,33 +502,33 @@ class Analytics:
             """,
             {"uid": user_id, "bid": business_id}
         )
-        cogs_df = pd.DataFrame(cogs_rows, columns=['quantity', 'unit_cost'])
-        total_cogs = (cogs_df['quantity'] * cogs_df['unit_cost']).sum() if not cogs_df.empty else 0
+        cogs_df = pd.DataFrame(cogs_rows, columns=["quantity", "unit_cost"])
+        total_cogs = (cogs_df["quantity"] * cogs_df["unit_cost"]).sum() if not cogs_df.empty else 0
 
         gross_profit = total_revenue - total_cogs
         net_profit = gross_profit - total_expenses
 
         today = datetime.now()
-        if period == 'daily':
-            mask = df['date'].dt.date == today.date()
-        elif period == 'weekly':
-            mask = df['date'] >= (today - timedelta(days=today.weekday()))
+        if period == "daily":
+            mask = df["date"].dt.date == today.date()
+        elif period == "weekly":
+            mask = df["date"] >= (today - timedelta(days=today.weekday()))
         else:
-            mask = (df['date'].dt.year == today.year) & (df['date'].dt.month == today.month)
+            mask = (df["date"].dt.year == today.year) & (df["date"].dt.month == today.month)
 
-        period_sales = sales.loc[mask, 'amount'].sum() if not sales.empty else 0
-        period_expenses = expenses.loc[mask, 'amount'].sum() if not expenses.empty else 0
+        period_sales = sales.loc[mask, "amount"].sum() if not sales.empty else 0
+        period_expenses = expenses.loc[mask, "amount"].sum() if not expenses.empty else 0
         period_profit = period_sales - period_expenses
 
         gross_margin = (gross_profit / total_revenue * 100) if total_revenue else 0
         net_margin = (net_profit / total_revenue * 100) if total_revenue else 0
 
         return {
-            'total_revenue': total_revenue, 'total_cogs': total_cogs,
-            'total_expenses': total_expenses, 'gross_profit': gross_profit,
-            'net_profit': net_profit, 'gross_margin': gross_margin,
-            'net_margin': net_margin, 'period_profit': period_profit,
-            'period_sales': period_sales, 'transaction_count': len(df)
+            "total_revenue": total_revenue, "total_cogs": total_cogs,
+            "total_expenses": total_expenses, "gross_profit": gross_profit,
+            "net_profit": net_profit, "gross_margin": gross_margin,
+            "net_margin": net_margin, "period_profit": period_profit,
+            "period_sales": period_sales, "transaction_count": len(df)
         }
 
     @staticmethod
@@ -533,26 +537,26 @@ class Analytics:
             "SELECT date, type, amount FROM transactions WHERE user_id = :uid AND business_id = :bid",
             {"uid": user_id, "bid": business_id}
         )
-        df = pd.DataFrame(rows, columns=['date', 'type', 'amount'])
+        df = pd.DataFrame(rows, columns=["date", "type", "amount"])
         if df.empty:
             return pd.DataFrame()
-        df['date'] = pd.to_datetime(df['date'])
+        df["date"] = pd.to_datetime(df["date"])
         cutoff = datetime.now() - timedelta(days=30*months)
-        df = df[df['date'] >= cutoff]
+        df = df[df["date"] >= cutoff]
         if df.empty:
             return pd.DataFrame()
-        df['month'] = df['date'].dt.to_period('M').astype(str)
-        pivot = df.pivot_table(index='month', columns='type', values='amount', aggfunc='sum', fill_value=0)
-        if 'Sales' not in pivot.columns:
-            pivot['Sales'] = 0
-        if 'Expense' not in pivot.columns:
-            pivot['Expense'] = 0
-        pivot['profit'] = pivot['Sales'] - pivot['Expense']
-        pivot['margin'] = (pivot['profit'] / pivot['Sales'] * 100).replace([np.inf, -np.inf], 0).fillna(0).round(1)
+        df["month"] = df["date"].dt.to_period("M").astype(str)
+        pivot = df.pivot_table(index="month", columns="type", values="amount", aggfunc="sum", fill_value=0)
+        if "Sales" not in pivot.columns:
+            pivot["Sales"] = 0
+        if "Expense" not in pivot.columns:
+            pivot["Expense"] = 0
+        pivot["profit"] = pivot["Sales"] - pivot["Expense"]
+        pivot["margin"] = (pivot["profit"] / pivot["Sales"] * 100).replace([np.inf, -np.inf], 0).fillna(0).round(1)
         pivot = pivot.reset_index()
-        pivot['month_dt'] = pd.to_datetime(pivot['month'])
-        pivot = pivot.sort_values('month_dt')
-        return pivot.rename(columns={'Sales': 'revenue', 'Expense': 'expenses'})
+        pivot["month_dt"] = pd.to_datetime(pivot["month"])
+        pivot = pivot.sort_values("month_dt")
+        return pivot.rename(columns={"Sales": "revenue", "Expense": "expenses"})
 
     @staticmethod
     def get_sales_data(user_id, business_id):
@@ -560,10 +564,10 @@ class Analytics:
             "SELECT date, amount, category FROM transactions WHERE user_id = :uid AND business_id = :bid AND type = 'Sales'",
             {"uid": user_id, "bid": business_id}
         )
-        df = pd.DataFrame(rows, columns=['date', 'amount', 'category'])
+        df = pd.DataFrame(rows, columns=["date", "amount", "category"])
         if df.empty:
             return pd.DataFrame()
-        df['date'] = pd.to_datetime(df['date'])
+        df["date"] = pd.to_datetime(df["date"])
         return df
 
     @staticmethod
@@ -572,10 +576,10 @@ class Analytics:
             "SELECT date, amount, category FROM transactions WHERE user_id = :uid AND business_id = :bid AND type = 'Expense'",
             {"uid": user_id, "bid": business_id}
         )
-        df = pd.DataFrame(rows, columns=['date', 'amount', 'category'])
+        df = pd.DataFrame(rows, columns=["date", "amount", "category"])
         if df.empty:
             return pd.DataFrame()
-        df['date'] = pd.to_datetime(df['date'])
+        df["date"] = pd.to_datetime(df["date"])
         return df
 
     @staticmethod
@@ -590,7 +594,7 @@ class Analytics:
             params["end_date"] = end_date
         query += " ORDER BY date DESC"
         rows = DBManager.fetch_all(query, params)
-        return pd.DataFrame(rows, columns=['id', 'date', 'type', 'amount', 'category', 'description'])
+        return pd.DataFrame(rows, columns=["id", "date", "type", "amount", "category", "description"])
 
 
 class Admin:
@@ -600,25 +604,25 @@ class Admin:
         businesses = DBManager.fetch_one("SELECT COUNT(*) FROM businesses")[0]
         transactions = DBManager.fetch_one("SELECT COUNT(*) FROM transactions")[0]
         products = DBManager.fetch_one("SELECT COUNT(*) FROM products")[0]
-        return {'users': users, 'businesses': businesses, 'transactions': transactions, 'products': products}
+        return {"users": users, "businesses": businesses, "transactions": transactions, "products": products}
 
     @staticmethod
     def get_all_users_with_stats():
         users_rows = DBManager.fetch_all("SELECT id, username, email, role, dob, gender FROM users ORDER BY created_at DESC")
-        users_df = pd.DataFrame(users_rows, columns=['id', 'username', 'email', 'role', 'dob', 'gender'])
+        users_df = pd.DataFrame(users_rows, columns=["id", "username", "email", "role", "dob", "gender"])
         if users_df.empty:
             return users_df
 
         biz_counts = DBManager.fetch_all("SELECT user_id, COUNT(*) as cnt FROM businesses GROUP BY user_id")
-        biz_df = pd.DataFrame(biz_counts, columns=['user_id','business_count'])
+        biz_df = pd.DataFrame(biz_counts, columns=["user_id","business_count"])
         tx_counts = DBManager.fetch_all("SELECT user_id, COUNT(*) as cnt FROM transactions GROUP BY user_id")
-        tx_df = pd.DataFrame(tx_counts, columns=['user_id','transaction_count'])
+        tx_df = pd.DataFrame(tx_counts, columns=["user_id","transaction_count"])
 
-        users_df = users_df.merge(biz_df, left_on='id', right_on='user_id', how='left').drop('user_id', axis=1)
-        users_df = users_df.merge(tx_df, left_on='id', right_on='user_id', how='left').drop('user_id', axis=1)
+        users_df = users_df.merge(biz_df, left_on="id", right_on="user_id", how="left").drop("user_id", axis=1)
+        users_df = users_df.merge(tx_df, left_on="id", right_on="user_id", how="left").drop("user_id", axis=1)
 
-        users_df['business_count'] = users_df['business_count'].fillna(0).astype(int)
-        users_df['transaction_count'] = users_df['transaction_count'].fillna(0).astype(int)
+        users_df["business_count"] = users_df["business_count"].fillna(0).astype(int)
+        users_df["transaction_count"] = users_df["transaction_count"].fillna(0).astype(int)
         return users_df
 
     @staticmethod
@@ -637,12 +641,12 @@ class Admin:
     @staticmethod
     def get_admin_password_hash():
         row = DBManager.fetch_one("SELECT value FROM system_settings WHERE key = 'admin_password'")
-        return row._mapping['value'] if row else None
+        return row._mapping["value"] if row else None
 
     @staticmethod
     def set_admin_password(new_password):
         hashed = AuthManager.hash_password(new_password)
-        DBManager.execute("UPDATE system_settings SET value = :pw WHERE key = 'admin_password'", {'pw': hashed})
+        DBManager.execute("UPDATE system_settings SET value = :pw WHERE key = 'admin_password'", {"pw": hashed})
 
     @staticmethod
     def get_daily_transaction_volume(days=30):
@@ -655,7 +659,7 @@ class Admin:
             ORDER BY day
             """
         )
-        return pd.DataFrame(rows, columns=['day', 'count'])
+        return pd.DataFrame(rows, columns=["day", "count"])
 
     @staticmethod
     def get_category_completeness():
@@ -676,7 +680,7 @@ class Admin:
             """,
             {"lim": limit}
         )
-        return pd.DataFrame(rows, columns=['username', 'tx_count'])
+        return pd.DataFrame(rows, columns=["username", "tx_count"])
 
 # -----------------------------------------------------------------------------
 # UI Pages
@@ -694,18 +698,18 @@ def page_login():
         if st.form_submit_button("Login", use_container_width=True):
             if username_or_email and password:
                 result = AuthManager.login(username_or_email, password)
-                if result['success']:
+                if result["success"]:
                     st.session_state.logged_in = True
-                    st.session_state.user_id = result['user_id']
-                    st.session_state.username = result['username']
-                    st.session_state.email = result['email']
-                    st.session_state.role = result['role']
-                    st.session_state.token = result['token']
+                    st.session_state.user_id = result["user_id"]
+                    st.session_state.username = result["username"]
+                    st.session_state.email = result["email"]
+                    st.session_state.role = result["role"]
+                    st.session_state.token = result["token"]
                     st.session_state.page = "Dashboard"
                     st.success(f"Welcome back, {st.session_state.username}!")
                     st.rerun()
                 else:
-                    st.error(result['message'])
+                    st.error(result["message"])
             else:
                 st.error("Please enter both username/email and password.")
 
@@ -733,11 +737,13 @@ def page_signup():
                         {"uname": username, "email": email, "pw": hashed_password, "role": role, "dob": dob, "gender": gender}
                     )
                     if user_id:
-                        # Initialize user preferences
-                        DBManager.execute(
-                            "INSERT INTO user_preferences (user_id) VALUES (:uid)",
-                            {"uid": user_id}
-                        )
+                        # Ensure user preferences are created only if they don't exist
+                        existing_pref = DBManager.fetch_one("SELECT user_id FROM user_preferences WHERE user_id = :uid", {"uid": user_id})
+                        if not existing_pref:
+                            DBManager.execute(
+                                "INSERT INTO user_preferences (user_id) VALUES (:uid)",
+                                {"uid": user_id}
+                            )
                         st.success("Account created successfully! Please log in.")
                         set_page("Login")
                         st.rerun()
@@ -748,6 +754,8 @@ def page_signup():
                         st.error("Username already exists. Please choose a different one.")
                     elif "UNIQUE constraint failed: users.email" in str(e):
                         st.error("Email already exists. Please use a different one.")
+                    elif "UNIQUE constraint failed: user_preferences.user_id" in str(e):
+                        st.error("User preferences already exist for this user. Please try logging in.")
                     else:
                         st.error(f"Database error: {e}")
                 except Exception as e:
@@ -767,10 +775,10 @@ def page_dashboard():
         "SELECT id, business_name FROM businesses WHERE user_id = :uid ORDER BY business_name",
         {"uid": st.session_state.user_id}
     )
-    biz = pd.DataFrame(biz_rows, columns=['id', 'business_name'])
+    biz = pd.DataFrame(biz_rows, columns=["id", "business_name"])
 
     if not biz.empty:
-        opts = biz.set_index('id')['business_name'].to_dict()
+        opts = biz.set_index("id")["business_name"].to_dict()
         # Ensure active_business_id is valid for the current user
         if st.session_state.active_business_id not in opts and opts:
             st.session_state.active_business_id = list(opts.keys())[0]
@@ -831,17 +839,17 @@ def page_sales_dashboard():
         st.info("No sales data available for this business.")
         return
 
-    total_sales = sales_df['amount'].sum()
+    total_sales = sales_df["amount"].sum()
     st.metric("Total Sales", f"{st.session_state.currency_symbol}{total_sales:,.2f}")
 
     st.subheader("Sales by Category")
-    sales_by_category = sales_df.groupby('category')['amount'].sum().sort_values(ascending=False).reset_index()
-    fig_cat = px.pie(sales_by_category, values='amount', names='category', title='Sales Distribution by Category')
+    sales_by_category = sales_df.groupby("category")["amount"].sum().sort_values(ascending=False).reset_index()
+    fig_cat = px.pie(sales_by_category, values="amount", names="category", title="Sales Distribution by Category")
     st.plotly_chart(fig_cat, use_container_width=True)
 
     st.subheader("Daily Sales Trend")
-    sales_daily = sales_df.set_index('date').resample('D')['amount'].sum().reset_index()
-    fig_daily = px.line(sales_daily, x='date', y='amount', title='Daily Sales Over Time')
+    sales_daily = sales_df.set_index("date").resample("D")["amount"].sum().reset_index()
+    fig_daily = px.line(sales_daily, x="date", y="amount", title="Daily Sales Over Time")
     st.plotly_chart(fig_daily, use_container_width=True)
 
 def page_sales_trends():
@@ -860,30 +868,30 @@ def page_sales_trends():
         st.info("No sales data available for this business.")
         return
 
-    sales_df['month'] = sales_df['date'].dt.to_period('M').astype(str)
-    monthly_sales = sales_df.groupby('month')['amount'].sum().reset_index()
-    monthly_sales['month_dt'] = pd.to_datetime(monthly_sales['month'])
-    monthly_sales = monthly_sales.sort_values('month_dt')
+    sales_df["month"] = sales_df["date"].dt.to_period("M").astype(str)
+    monthly_sales = sales_df.groupby("month")["amount"].sum().reset_index()
+    monthly_sales["month_dt"] = pd.to_datetime(monthly_sales["month"])
+    monthly_sales = monthly_sales.sort_values("month_dt")
 
     st.subheader("Monthly Sales Over Time")
-    fig = px.line(monthly_sales, x='month_dt', y='amount', markers=True, title='Monthly Sales Trend')
-    fig.update_xaxes(tickformat='%b %Y')
+    fig = px.line(monthly_sales, x="month_dt", y="amount", markers=True, title="Monthly Sales Trend")
+    fig.update_xaxes(tickformat="%b %Y")
     st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("Sales Forecasting (Experimental)")
     if PROPHET_AVAILABLE and len(monthly_sales) > 5:
-        prophet_df = monthly_sales[['month_dt', 'amount']].rename(columns={'month_dt': 'ds', 'amount': 'y'})
+        prophet_df = monthly_sales[["month_dt", "amount"]].rename(columns={"month_dt": "ds", "amount": "y"})
         m = Prophet()
         m.fit(prophet_df)
-        future = m.make_future_dataframe(periods=3, freq='M')
+        future = m.make_future_dataframe(periods=3, freq="M")
         forecast = m.predict(future)
 
         fig_forecast = go.Figure()
-        fig_forecast.add_trace(go.Scatter(x=prophet_df['ds'], y=prophet_df['y'], mode='lines+markers', name='Actual Sales'))
-        fig_forecast.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat'], mode='lines', name='Forecast', line=dict(dash='dash')))
-        fig_forecast.add_add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_lower'], fill='tonexty', fillcolor='rgba(0,100,80,0.2)', line=dict(color='transparent'), name='Lower Bound'))
-        fig_forecast.add_add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_upper'], fill='tonexty', fillcolor='rgba(0,100,80,0.2)', line=dict(color='transparent'), name='Upper Bound'))
-        fig_forecast.update_layout(title='Sales Forecast for Next 3 Months', xaxis_title='Date', yaxis_title='Sales Amount')
+        fig_forecast.add_trace(go.Scatter(x=prophet_df["ds"], y=prophet_df["y"], mode="lines+markers", name="Actual Sales"))
+        fig_forecast.add_trace(go.Scatter(x=forecast["ds"], y=forecast["yhat"], mode="lines", name="Forecast", line=dict(dash="dash")))
+        fig_forecast.add_trace(go.Scatter(x=forecast["ds"], y=forecast["yhat_lower"], fill="tonexty", fillcolor="rgba(0,100,80,0.2)", line=dict(color="transparent"), name="Lower Bound"))
+        fig_forecast.add_trace(go.Scatter(x=forecast["ds"], y=forecast["yhat_upper"], fill="tonexty", fillcolor="rgba(0,100,80,0.2)", line=dict(color="transparent"), name="Upper Bound"))
+        fig_forecast.update_layout(title="Sales Forecast for Next 3 Months", xaxis_title="Date", yaxis_title="Sales Amount")
         st.plotly_chart(fig_forecast, use_container_width=True)
     else:
         st.info("Not enough data points (min 5 months) or Prophet library not installed for forecasting.")
@@ -905,29 +913,29 @@ def page_forecasting():
         st.info("No sales data available for this business to forecast.")
         return
 
-    sales_df['month'] = sales_df['date'].dt.to_period('M').astype(str)
-    monthly_sales = sales_df.groupby('month')['amount'].sum().reset_index()
-    monthly_sales['month_dt'] = pd.to_datetime(monthly_sales['month'])
-    monthly_sales = monthly_sales.sort_values('month_dt')
+    sales_df["month"] = sales_df["date"].dt.to_period("M").astype(str)
+    monthly_sales = sales_df.groupby("month")["amount"].sum().reset_index()
+    monthly_sales["month_dt"] = pd.to_datetime(monthly_sales["month"])
+    monthly_sales = monthly_sales.sort_values("month_dt")
 
     if PROPHET_AVAILABLE and len(monthly_sales) > 5:
         periods = st.slider("Number of months to forecast", 1, 12, 3)
-        prophet_df = monthly_sales[['month_dt', 'amount']].rename(columns={'month_dt': 'ds', 'amount': 'y'})
+        prophet_df = monthly_sales[["month_dt", "amount"]].rename(columns={"month_dt": "ds", "amount": "y"})
         m = Prophet()
         m.fit(prophet_df)
-        future = m.make_future_dataframe(periods=periods, freq='M')
+        future = m.make_future_dataframe(periods=periods, freq="M")
         forecast = m.predict(future)
 
         fig_forecast = go.Figure()
-        fig_forecast.add_trace(go.Scatter(x=prophet_df['ds'], y=prophet_df['y'], mode='lines+markers', name='Actual Sales'))
-        fig_forecast.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat'], mode='lines', name='Forecast', line=dict(dash='dash')))
-        fig_forecast.add_add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_lower'], fill='tonexty', fillcolor='rgba(0,100,80,0.2)', line=dict(color='transparent'), name='Lower Bound'))
-        fig_forecast.add_add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat_upper'], fill='tonexty', fillcolor='rgba(0,100,80,0.2)', line=dict(color='transparent'), name='Upper Bound'))
-        fig_forecast.update_layout(title=f'Sales Forecast for Next {periods} Months', xaxis_title='Date', yaxis_title='Sales Amount')
+        fig_forecast.add_trace(go.Scatter(x=prophet_df["ds"], y=prophet_df["y"], mode="lines+markers", name="Actual Sales"))
+        fig_forecast.add_trace(go.Scatter(x=forecast["ds"], y=forecast["yhat"], mode="lines", name="Forecast", line=dict(dash="dash")))
+        fig_forecast.add_trace(go.Scatter(x=forecast["ds"], y=forecast["yhat_lower"], fill="tonexty", fillcolor="rgba(0,100,80,0.2)", line=dict(color="transparent"), name="Lower Bound"))
+        fig_forecast.add_trace(go.Scatter(x=forecast["ds"], y=forecast["yhat_upper"], fill="tonexty", fillcolor="rgba(0,100,80,0.2)", line=dict(color="transparent"), name="Upper Bound"))
+        fig_forecast.update_layout(title=f"Sales Forecast for Next {periods} Months", xaxis_title="Date", yaxis_title="Sales Amount")
         st.plotly_chart(fig_forecast, use_container_width=True)
 
         st.subheader("Forecast Data")
-        st.dataframe(forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].tail(periods).rename(columns={'ds': 'Date', 'yhat': 'Forecast', 'yhat_lower': 'Lower Bound', 'yhat_upper': 'Upper Bound'}))
+        st.dataframe(forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].tail(periods).rename(columns={"ds": "Date", "yhat": "Forecast", "yhat_lower": "Lower Bound", "yhat_upper": "Upper Bound"}))
 
     else:
         st.info("Not enough data points (min 5 months) or Prophet library not installed for forecasting.")
@@ -1033,18 +1041,18 @@ def page_expense_categories():
         return
 
     st.subheader("Expenses by Category")
-    expenses_by_category = expense_df.groupby('category')['amount'].sum().sort_values(ascending=False).reset_index()
-    fig_exp_cat = px.pie(expenses_by_category, values='amount', names='category', title='Expense Distribution by Category')
+    expenses_by_category = expense_df.groupby("category")["amount"].sum().sort_values(ascending=False).reset_index()
+    fig_exp_cat = px.pie(expenses_by_category, values="amount", names="category", title="Expense Distribution by Category")
     st.plotly_chart(fig_exp_cat, use_container_width=True)
 
     st.subheader("Monthly Expense Trend by Category")
-    expense_df['month'] = expense_df['date'].dt.to_period('M').astype(str)
-    monthly_expenses_cat = expense_df.groupby(['month', 'category'])['amount'].sum().reset_index()
-    monthly_expenses_cat['month_dt'] = pd.to_datetime(monthly_expenses_cat['month'])
-    monthly_expenses_cat = monthly_expenses_cat.sort_values('month_dt')
+    expense_df["month"] = expense_df["date"].dt.to_period("M").astype(str)
+    monthly_expenses_cat = expense_df.groupby(["month", "category"])["amount"].sum().reset_index()
+    monthly_expenses_cat["month_dt"] = pd.to_datetime(monthly_expenses_cat["month"])
+    monthly_expenses_cat = monthly_expenses_cat.sort_values("month_dt")
 
-    fig_exp_trend = px.line(monthly_expenses_cat, x='month_dt', y='amount', color='category', markers=True, title='Monthly Expenses by Category')
-    fig_exp_trend.update_xaxes(tickformat='%b %Y')
+    fig_exp_trend = px.line(monthly_expenses_cat, x="month_dt", y="amount", color="category", markers=True, title="Monthly Expenses by Category")
+    fig_exp_trend.update_xaxes(tickformat="%b %Y")
     st.plotly_chart(fig_exp_trend, use_container_width=True)
 
 def page_inventory():
@@ -1059,7 +1067,7 @@ def page_inventory():
         return
     inv = Analytics.get_inventory_value(st.session_state.user_id, st.session_state.active_business_id)
     show_metric_row([
-        ("Products", inv['product_count'], None),
+        ("Products", inv["product_count"], None),
         ("Total Units", f"{inv['total_units']:,.0f}", None),
         ("Inventory Value", f"{st.session_state.currency_symbol}{inv['total_value']:,.2f}", None)
     ])
@@ -1080,7 +1088,7 @@ def page_inventory():
             """,
             {"uid": st.session_state.user_id, "bid": st.session_state.active_business_id}
         )
-        prods = pd.DataFrame(prods_rows, columns=['id', 'product_name','sku','quantity','cost_price','selling_price','reorder_level','category','stock_value'])
+        prods = pd.DataFrame(prods_rows, columns=["id", "product_name","sku","quantity","cost_price","selling_price","reorder_level","category","stock_value"])
         if prods.empty:
             st.info("No products")
         else:
@@ -1108,9 +1116,9 @@ def page_inventory():
                     # Check if SKU is unique for other products
                     existing_sku_id = DBManager.fetch_one(
                         "SELECT id FROM products WHERE user_id = :uid AND sku = :sku AND id != :pid",
-                        {"uid": st.session_state.user_id, "sku": r['sku'], "pid": r['id']}
+                        {"uid": st.session_state.user_id, "sku": r["sku"], "pid": r["id"]}
                     )
-                    if r['sku'] and existing_sku_id:
+                    if r["sku"] and existing_sku_id:
                         st.error(f"SKU '{r['sku']}' already exists for another product. Cannot save changes for {r['product_name']}.")
                         continue
 
@@ -1119,17 +1127,19 @@ def page_inventory():
                         UPDATE products SET product_name = :name, sku = :sku, quantity = :qty, cost_price = :cost, selling_price = :price, reorder_level = :reorder, category = :cat, updated_at = CURRENT_TIMESTAMP
                         WHERE id = :pid AND user_id = :uid
                         """,
-                        {"name": r['product_name'], "sku": r['sku'], "qty": r['quantity'], "cost": r['cost_price'], "price": r['selling_price'], "reorder": r['reorder_level'], "cat": r['category'], "pid": r['id'], "uid": st.session_state.user_id}
+                        {"name": r["product_name"], "sku": r["sku"], "qty": r["quantity"], "cost": r["cost_price"], "price": r["selling_price"], "reorder": r["reorder_level"], "cat": r["category"], "pid": r["id"], "uid": st.session_state.user_id}
                     )
                 st.success("Product changes saved!")
                 st.rerun()
 
             # Add delete functionality for products
             st.subheader("Delete Products")
-            product_to_delete_id = st.selectbox("Select product to delete", options=[None] + prods['id'].tolist(), format_func=lambda x: prods[prods['id']==x]['product_name'].iloc[0] if x else "Select a product")
+            product_to_delete_id = st.selectbox("Select product to delete", options=[None] + prods["id"].tolist(), format_func=lambda x: prods[prods["id"]==x]["product_name"].iloc[0] if x else "Select a product")
             if product_to_delete_id and st.button("Delete Selected Product", key="delete_product_btn"):
-                product_name_to_delete = prods[prods['id']==product_to_delete_id]['product_name'].iloc[0]
-                if st.warning(f"Are you sure you want to delete '{product_name_to_delete}' and all its stock movements?"):
+                product_name_to_delete = prods[prods["id"]==product_to_delete_id]["product_name"].iloc[0]
+                # Added confirmation step
+                confirm_delete = st.warning(f"Are you sure you want to delete '{product_name_to_delete}' and all its stock movements?")
+                if confirm_delete:
                     if st.button("Confirm Delete", key="confirm_delete_product"):
                         DBManager.execute("DELETE FROM products WHERE id = :pid AND user_id = :uid", {"pid": product_to_delete_id, "uid": st.session_state.user_id})
                         st.success(f"Product '{product_name_to_delete}' deleted.")
@@ -1160,14 +1170,14 @@ def page_inventory():
             "SELECT id, product_name, quantity FROM products WHERE user_id = :uid AND business_id = :bid",
             {"uid": st.session_state.user_id, "bid": st.session_state.active_business_id}
         )
-        plist = pd.DataFrame(plist_rows, columns=['id','product_name','quantity'])
+        plist = pd.DataFrame(plist_rows, columns=["id","product_name","quantity"])
         if plist.empty:
             st.warning("Add products first")
         else:
             with st.form("movement"):
-                pid = st.selectbox("Product", plist['id'].tolist(),
-                                   format_func=lambda x: plist[plist['id']==x]['product_name'].iloc[0])
-                cur_qty = plist[plist['id']==pid]['quantity'].iloc[0]
+                pid = st.selectbox("Product", plist["id"].tolist(),
+                                   format_func=lambda x: plist[plist["id"]==x]["product_name"].iloc[0])
+                cur_qty = plist[plist["id"]==pid]["quantity"].iloc[0]
                 st.info(f"Current stock: {cur_qty:,.2f}")
                 move = st.selectbox("Movement Type", ["purchase", "sale", "adjustment"])
                 mqty = st.number_input("Quantity", 0.0, step=1.0)
@@ -1199,12 +1209,12 @@ def page_inventory():
             """,
             {"uid": st.session_state.user_id, "bid": st.session_state.active_business_id}
         )
-        hist = pd.DataFrame(hist_rows, columns=['movement_date','product_name','movement_type','quantity','unit_cost','unit_price','notes'])
+        hist = pd.DataFrame(hist_rows, columns=["movement_date","product_name","movement_type","quantity","unit_cost","unit_price","notes"])
         if hist.empty:
             st.info("No movements")
         else:
-            hist['movement_date'] = pd.to_datetime(hist['movement_date']).dt.strftime('%Y-%m-%d %H:%M')
-            for c in ['unit_cost', 'unit_price']:
+            hist["movement_date"] = pd.to_datetime(hist["movement_date"]).dt.strftime("%Y-%m-%d %H:%M")
+            for c in ["unit_cost", "unit_price"]:
                 hist[c] = hist[c].apply(lambda x: f"{st.session_state.currency_symbol}{x:,.2f}" if x else '-')
             st.dataframe(hist)
 
@@ -1231,15 +1241,15 @@ def page_cogs():
         """,
         {"uid": st.session_state.user_id, "bid": st.session_state.active_business_id}
     )
-    df = pd.DataFrame(rows, columns=['month','sales','revenue','cogs'])
+    df = pd.DataFrame(rows, columns=["month","sales","revenue","cogs"])
     if df.empty:
         st.info("No COGS data")
         return
-    df['gross_profit'] = df['revenue'] - df['cogs']
-    df['margin'] = (df['gross_profit'] / df['revenue'] * 100).round(1)
-    df['month_dt'] = pd.to_datetime(df['month'] + '-01')
-    df = df.sort_values('month_dt')
-    tot_rev, tot_cogs = df['revenue'].sum(), df['cogs'].sum()
+    df["gross_profit"] = df["revenue"] - df["cogs"]
+    df["margin"] = (df["gross_profit"] / df["revenue"] * 100).round(1)
+    df["month_dt"] = pd.to_datetime(df["month"] + '-01')
+    df = df.sort_values("month_dt")
+    tot_rev, tot_cogs = df["revenue"].sum(), df["cogs"].sum()
     tot_profit = tot_rev - tot_cogs
     avg_margin = (tot_profit/tot_rev*100) if tot_rev else 0
     show_metric_row([
@@ -1307,13 +1317,13 @@ def page_businesses():
         "SELECT id, business_name, business_type, address, phone, created_at FROM businesses WHERE user_id = :uid ORDER BY created_at DESC",
         {"uid": st.session_state.user_id}
     )
-    df = pd.DataFrame(biz_rows, columns=['id','business_name','business_type','address','phone','created_at'])
+    df = pd.DataFrame(biz_rows, columns=["id","business_name","business_type","address","phone","created_at"])
     if df.empty:
         st.info("No businesses yet.")
         return
 
     for _, row in df.iterrows():
-        bid, active = row['id'], st.session_state.active_business_id == row['id']
+        bid, active = row["id"], st.session_state.active_business_id == row["id"]
         cols = st.columns([3,1,1,1])
         active_tag = " [ACTIVE]" if active else ""
         cols[0].write(f"**{row['business_name']}**{active_tag}")
@@ -1329,7 +1339,8 @@ def page_businesses():
             st.session_state[f"edit_{bid}"] = True
         if not active and cols[3].button("Delete", key=f"del_{bid}"):
             # Confirm deletion
-            if st.warning(f"Are you sure you want to delete business '{row['business_name']}' and all its transactions/products?"):
+            confirm_delete = st.warning(f"Are you sure you want to delete business '{row['business_name']}' and all its transactions/products?")
+            if confirm_delete:
                 if st.button("Confirm Delete", key=f"confirm_del_{bid}"):
                     DBManager.execute("DELETE FROM businesses WHERE id = :bid AND user_id = :uid", {"bid": bid, "uid": st.session_state.user_id})
                     st.success(f"Deleted {row['business_name']}")
@@ -1406,7 +1417,7 @@ def page_view_transactions():
         "SELECT id, type, amount, category, description, date FROM transactions WHERE user_id = :uid AND business_id = :bid ORDER BY date DESC",
         {"uid": st.session_state.user_id, "bid": st.session_state.active_business_id}
     )
-    df = pd.DataFrame(rows, columns=['id', 'type', 'amount', 'category', 'description', 'date'])
+    df = pd.DataFrame(rows, columns=["id", "type", "amount", "category", "description", "date"])
     if df.empty:
         st.info("No transactions.")
         return
@@ -1435,23 +1446,25 @@ def page_view_transactions():
         for _, r in edited.iterrows():
             DBManager.execute(
                 "UPDATE transactions SET type = :typ, amount = :amt, category = :cat, description = :desc WHERE id = :id AND user_id = :uid",
-                {"typ": r['type'], "amt": r['amount'], "cat": r['category'], "desc": r['description'],
-                 "id": r['id'], "uid": st.session_state.user_id}
+                {"typ": r["type"], "amt": r["amount"], "cat": r["category"], "desc": r["description"],
+                 "id": r["id"], "uid": st.session_state.user_id}
             )
         st.success("Saved")
         st.rerun()
 
     if can_delete:
         st.subheader("Delete Transactions")
-        tx_to_delete_id = st.selectbox("Select transaction to delete", options=[None] + df['id'].tolist(), format_func=lambda x: f"ID: {x} - {df[df['id']==x]['description'].iloc[0]}" if x else "Select a transaction")
+        tx_to_delete_id = st.selectbox("Select transaction to delete", options=[None] + df["id"].tolist(), format_func=lambda x: f"ID: {x} - {df[df["id"]==x]['description'].iloc[0]}" if x else "Select a transaction")
         if tx_to_delete_id and st.button("Delete Selected Transaction", key="delete_tx_btn"):
-            if st.warning(f"Are you sure you want to delete transaction ID {tx_to_delete_id}?"):
+            # Added confirmation step
+            confirm_delete = st.warning(f"Are you sure you want to delete transaction ID {tx_to_delete_id}?")
+            if confirm_delete:
                 if st.button("Confirm Delete", key="confirm_delete_tx"):
-                    DBManager.execute("DELETE FROM transactions WHERE id = :tid AND user_id = :uid", {"tid": tx_to_delete_id, "uid": st.session_state.user_id})
+                    DBManager.execute("DELETE FROM transactions WHERE id = :tid AND user_id = :uid", {"tid": tx_to_to_delete_id, "uid": st.session_state.user_id})
                     st.success(f"Transaction ID {tx_to_delete_id} deleted.")
                     st.rerun()
 
-    st.download_button("Download CSV", df.to_csv(index=False).encode('utf-8'), "transactions.csv", mime="text/csv")
+    st.download_button("Download CSV", df.to_csv(index=False).encode("utf-8"), "transactions.csv", mime="text/csv")
 
 def page_import_transactions():
     if st.session_state.user_id is None:
@@ -1463,7 +1476,7 @@ def page_import_transactions():
     if not st.session_state.active_business_id:
         st.warning("Select active business first")
         return
-    file = st.file_uploader("Choose CSV", type=['csv'])
+    file = st.file_uploader("Choose CSV", type=["csv"])
     if not file:
         return
     df = pd.read_csv(file)
@@ -1582,7 +1595,7 @@ def page_profile():
                     "SELECT password FROM users WHERE id = :uid",
                     {"uid": st.session_state.user_id}
                 )
-                if user_auth_data and AuthManager.check_password(current_password, user_auth_data._mapping['password']):
+                if user_auth_data and AuthManager.check_password(current_password, user_auth_data._mapping["password"]):
                     if new_password == confirm_new_password:
                         if new_password:
                             Admin.change_user_password(st.session_state.user_id, new_password)
@@ -1619,21 +1632,21 @@ def page_report_generation():
             "SELECT product_name, sku, quantity, cost_price, selling_price FROM products WHERE user_id = :uid AND business_id = :bid",
             {"uid": st.session_state.user_id, "bid": st.session_state.active_business_id}
         )
-        inventory_df = pd.DataFrame(inventory_df, columns=['product_name', 'sku', 'quantity', 'cost_price', 'selling_price'])
+        inventory_df = pd.DataFrame(inventory_df, columns=["product_name", "sku", "quantity", "cost_price", "selling_price"])
 
         summary_data = []
         if not transactions_df.empty:
-            sales_sum = transactions_df[transactions_df['type'] == 'Sales']['amount'].sum()
-            expense_sum = transactions_df[transactions_df['type'] == 'Expense']['amount'].sum()
-            summary_data.append({'type': 'Sales', 'count': len(transactions_df[transactions_df['type'] == 'Sales']), 'total': sales_sum})
-            summary_data.append({'type': 'Expenses', 'count': len(transactions_df[transactions_df['type'] == 'Expense']), 'total': expense_sum})
-            summary_data.append({'type': 'Net Profit', 'count': '-', 'total': sales_sum - expense_sum})
+            sales_sum = transactions_df[transactions_df["type"] == "Sales"]["amount"].sum()
+            expense_sum = transactions_df[transactions_df["type"] == "Expense"]["amount"].sum()
+            summary_data.append({"type": "Sales", "count": len(transactions_df[transactions_df["type"] == "Sales"]), "total": sales_sum})
+            summary_data.append({"type": "Expenses", "count": len(transactions_df[transactions_df["type"] == "Expense"]), "total": expense_sum})
+            summary_data.append({"type": "Net Profit", "count": '-', "total": sales_sum - expense_sum})
         summary_df = pd.DataFrame(summary_data)
 
         report_data = {
-            'summary': summary_df,
-            'transactions': transactions_df,
-            'inventory': inventory_df
+            "summary": summary_df,
+            "transactions": transactions_df,
+            "inventory": inventory_df
         }
 
         try:
@@ -1669,7 +1682,7 @@ def page_admin_dashboard():
         return
 
     # Admin password authentication
-    if not st.session_state.get('admin_authenticated', False):
+    if not st.session_state.get("admin_authenticated", False):
         with st.form("admin_password_form"):
             password = st.text_input("Enter Admin Password", type="password")
             if st.form_submit_button("Access Dashboard"):
@@ -1687,10 +1700,10 @@ def page_admin_dashboard():
 
     stats = Admin.get_system_stats()
     show_metric_row([
-        ("Total Users", stats['users'], None),
-        ("Total Businesses", stats['businesses'], None),
-        ("Total Transactions", stats['transactions'], None),
-        ("Total Products", stats['products'], None)
+        ("Total Users", stats["users"], None),
+        ("Total Businesses", stats["businesses"], None),
+        ("Total Transactions", stats["transactions"], None),
+        ("Total Products", stats["products"], None)
     ])
 
     st.divider()
@@ -1702,7 +1715,7 @@ def page_admin_dashboard():
         if users_df.empty:
             st.info("No users found.")
         else:
-            st.dataframe(users_df[['username','email','role','dob','gender','business_count','transaction_count']])
+            st.dataframe(users_df[["username","email","role","dob","gender","business_count","transaction_count"]])
             st.markdown("--- User Actions ---")
             for idx, row in users_df.iterrows():
                 cols = st.columns([2,2,1,1,1,1])
@@ -1711,12 +1724,13 @@ def page_admin_dashboard():
                 cols[2].write(row['role'])
                 cols[3].write(f"Biz: {row['business_count']}")
                 cols[4].write(f"Tx: {row['transaction_count']}")
-                if row['id'] != st.session_state.user_id:
+                if row["id"] != st.session_state.user_id:
                     delete_key = f"del_user_{row['id']}"
                     # Using a unique key for the button to avoid Streamlit issues
                     if cols[5].button("Delete", key=delete_key):
                         # Confirmation step
-                        if st.warning(f"Are you sure you want to delete user {row['username']}? This action is irreversible and will delete all associated data."):
+                        confirm_delete = st.warning(f"Are you sure you want to delete user {row['username']}? This action is irreversible and will delete all associated data.")
+                        if confirm_delete:
                             if st.button("Confirm Delete", key=f"confirm_del_user_{row['id']}"):
                                 Admin.delete_user(row['id'])
                                 st.success(f"User {row['username']} deleted.")
@@ -1738,17 +1752,17 @@ def page_admin_dashboard():
             """,
             {"role": role_filter}
         )
-        df_logins = pd.DataFrame(rows, columns=['username','role','login_time','logout_time','session_duration'])
+        df_logins = pd.DataFrame(rows, columns=["username","role","login_time","logout_time","session_duration"])
         if df_logins.empty:
             st.info("No login records.")
         else:
-            df_logins['login_time'] = pd.to_datetime(df_logins['login_time']).dt.strftime('%Y-%m-%d %H:%M:%S')
+            df_logins["login_time"] = pd.to_datetime(df_logins["login_time"]).dt.strftime("%Y-%m-%d %H:%M:%S")
             # Apply to_datetime only if there are non-null values to avoid error on all-null column
-            if df_logins['logout_time'].notna().any():
-                df_logins['logout_time'] = pd.to_datetime(df_logins['logout_time']).dt.strftime('%Y-%m-%d %H:%M:%S')
+            if df_logins["logout_time"].notna().any():
+                df_logins["logout_time"] = pd.to_datetime(df_logins["logout_time"]).dt.strftime("%Y-%m-%d %H:%M:%S")
             else:
-                df_logins['logout_time'] = None # Ensure column type consistency
-            df_logins['session_duration'] = df_logins['session_duration'].apply(lambda x: f"{int(x)} sec" if pd.notna(x) else "Active")
+                df_logins["logout_time"] = None # Ensure column type consistency
+            df_logins["session_duration"] = df_logins["session_duration"].apply(lambda x: f"{int(x)} sec" if pd.notna(x) else "Active")
             st.dataframe(df_logins)
 
     with tab3:
@@ -1761,17 +1775,17 @@ def page_admin_dashboard():
             ORDER BY a.access_time DESC
             """
         )
-        df_admin = pd.DataFrame(rows, columns=['access_time','username','role'])
+        df_admin = pd.DataFrame(rows, columns=["access_time","username","role"])
         if df_admin.empty:
             st.info("No admin access records.")
         else:
-            df_admin['access_time'] = pd.to_datetime(df_admin['access_time']).dt.strftime('%Y-%m-%d %H:%M:%S')
+            df_admin["access_time"] = pd.to_datetime(df_admin["access_time"]).dt.strftime("%Y-%m-%d %H:%M:%S")
             st.dataframe(df_admin)
 
     with tab4:
         st.subheader("Change User Password")
         users = DBManager.fetch_all("SELECT id, username FROM users")
-        user_options = {u._mapping['id']: u._mapping['username'] for u in users}
+        user_options = {u._mapping["id"]: u._mapping["username"] for u in users}
         selected_user_id = st.selectbox("Select User", options=list(user_options.keys()), format_func=lambda x: user_options[x], key="admin_change_user_pw_select")
         new_password = st.text_input("New Password", type="password", key="admin_new_pw")
         confirm_password = st.text_input("Confirm New Password", type="password", key="admin_confirm_pw")
@@ -1977,10 +1991,10 @@ def render_sidebar():
     with st.sidebar:
         st.title("Business Analyzer")
         user = authenticate()
-        if not user and st.session_state.get('logged_in'):
+        if not user and st.session_state.get("logged_in"):
             logout()
             st.rerun()
-        if st.session_state.get('logged_in'):
+        if st.session_state.get("logged_in"):
             st.write(f"**Welcome,** {st.session_state.username}  \nRole: {st.session_state.role}")
             st.divider()
 
@@ -2028,7 +2042,7 @@ def main():
     render_sidebar()
 
     # Safety redirect: if logged in but page is Login, go to Dashboard
-    if st.session_state.get('logged_in', False) and st.session_state.page == 'Login':
+    if st.session_state.get("logged_in", False) and st.session_state.page == 'Login':
         set_page('Dashboard')
         st.rerun()
 
