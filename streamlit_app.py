@@ -732,21 +732,33 @@ def page_signup():
             else:
                 hashed_password = AuthManager.hash_password(password)
                 try:
+                    # Insert user and get the ID
                     user_id = DBManager.insert_and_get_id(
                         "INSERT INTO users (username, email, password, role, dob, gender) VALUES (:uname, :email, :pw, :role, :dob, :gender)",
                         {"uname": username, "email": email, "pw": hashed_password, "role": role, "dob": dob, "gender": gender}
                     )
+
                     if user_id:
-                        # Ensure user preferences are created only if they don't exist
-                        existing_pref = DBManager.fetch_one("SELECT user_id FROM user_preferences WHERE user_id = :uid", {"uid": user_id})
-                        if not existing_pref:
-                            DBManager.execute(
-                                "INSERT INTO user_preferences (user_id) VALUES (:uid)",
-                                {"uid": user_id}
-                            )
-                        st.success("Account created successfully! Please log in.")
-                        set_page("Login")
-                        st.rerun()
+                        # Explicitly fetch the user to ensure the ID is correct and committed
+                        new_user_row = DBManager.fetch_one(
+                            "SELECT id, username, email, role FROM users WHERE id = :uid",
+                            {"uid": user_id}
+                        )
+                        if new_user_row:
+                            new_user = dict(new_user_row._mapping)
+                            # Create user preferences if they don't exist
+                            existing_pref = DBManager.fetch_one("SELECT user_id FROM user_preferences WHERE user_id = :uid", {"uid": user_id})
+                            if not existing_pref:
+                                DBManager.execute(
+                                    "INSERT INTO user_preferences (user_id) VALUES (:uid)",
+                                    {"uid": user_id}
+                                )
+
+                            st.success("Account created successfully! You can now log in.")
+                            set_page("Login")
+                            st.rerun()
+                        else:
+                            st.error("Failed to retrieve new user data after signup. Please try logging in.")
                     else:
                         st.error("Failed to create account. Please try again.")
                 except sa.exc.IntegrityError as e:
@@ -754,12 +766,10 @@ def page_signup():
                         st.error("Username already exists. Please choose a different one.")
                     elif "UNIQUE constraint failed: users.email" in str(e):
                         st.error("Email already exists. Please use a different one.")
-                    elif "UNIQUE constraint failed: user_preferences.user_id" in str(e):
-                        st.error("User preferences already exist for this user. Please try logging in.")
                     else:
-                        st.error(f"Database error: {e}")
+                        st.error(f"Database error during signup: {e}")
                 except Exception as e:
-                    st.error(f"An unexpected error occurred: {e}")
+                    st.error(f"An unexpected error occurred during signup: {e}")
 
 def page_dashboard():
     if st.session_state.user_id is None:
@@ -1460,7 +1470,7 @@ def page_view_transactions():
             confirm_delete = st.warning(f"Are you sure you want to delete transaction ID {tx_to_delete_id}?")
             if confirm_delete:
                 if st.button("Confirm Delete", key="confirm_delete_tx"):
-                    DBManager.execute("DELETE FROM transactions WHERE id = :tid AND user_id = :uid", {"tid": tx_to_to_delete_id, "uid": st.session_state.user_id})
+                    DBManager.execute("DELETE FROM transactions WHERE id = :tid AND user_id = :uid", {"tid": tx_to_delete_id, "uid": st.session_state.user_id})
                     st.success(f"Transaction ID {tx_to_delete_id} deleted.")
                     st.rerun()
 
