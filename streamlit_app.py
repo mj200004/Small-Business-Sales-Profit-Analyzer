@@ -1,7 +1,7 @@
 """
-Business Analyzer – Production Ready – DEBUG VERSION
+Business Analyzer – Production Ready – ULTIMATE DEBUG VERSION
 All milestones + requested enhancements.
-Extreme robustness: tries multiple ways to get user ID, logs raw row on failure.
+Extreme logging: prints everything about database interactions to stderr.
 """
 
 import streamlit as st
@@ -29,6 +29,7 @@ from fpdf import FPDF
 import warnings
 warnings.filterwarnings('ignore')
 import sys
+import traceback
 
 # Optional imports
 try:
@@ -59,7 +60,7 @@ class Config:
             return create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
 
 # -----------------------------------------------------------------------------
-# Database Manager
+# Database Manager with Debugging
 # -----------------------------------------------------------------------------
 class DBManager:
     _engine = None
@@ -68,6 +69,7 @@ class DBManager:
     def get_engine(cls):
         if cls._engine is None:
             cls._engine = Config.get_engine()
+            print(f"DEBUG: Database engine created. URL: {Config.DATABASE_URL or 'sqlite local'}", file=sys.stderr)
         return cls._engine
 
     @classmethod
@@ -75,8 +77,10 @@ class DBManager:
     def get_connection(cls):
         engine = cls.get_engine()
         with engine.connect() as conn:
+            print(f"DEBUG: Opened database connection", file=sys.stderr)
             yield conn
             conn.commit()
+            print(f"DEBUG: Committed transaction", file=sys.stderr)
 
     @classmethod
     def init_db(cls):
@@ -94,6 +98,7 @@ class DBManager:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """))
+            print("DEBUG: Ensured users table exists", file=sys.stderr)
             # Login history
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS login_history (
@@ -177,34 +182,77 @@ class DBManager:
                     notes TEXT
                 )
             """))
+            print("DEBUG: All tables ensured", file=sys.stderr)
 
     @classmethod
     def execute(cls, query, params=None):
+        print(f"DEBUG: Executing query: {query} with params: {params}", file=sys.stderr)
         with cls.get_connection() as conn:
             result = conn.execute(text(query), params or {})
             if result.returns_rows:
-                return result.fetchall()
+                rows = result.fetchall()
+                print(f"DEBUG: Query returned {len(rows)} rows", file=sys.stderr)
+                return rows
+            print(f"DEBUG: Query executed (no rows returned)", file=sys.stderr)
             return result
 
     @classmethod
     def fetch_one(cls, query, params=None):
+        print(f"DEBUG: Fetch one: {query} with params: {params}", file=sys.stderr)
         with cls.get_connection() as conn:
             result = conn.execute(text(query), params or {})
-            return result.fetchone()
+            row = result.fetchone()
+            print(f"DEBUG: Fetched row: {row}", file=sys.stderr)
+            return row
 
     @classmethod
     def fetch_all(cls, query, params=None):
+        print(f"DEBUG: Fetch all: {query} with params: {params}", file=sys.stderr)
         with cls.get_connection() as conn:
             result = conn.execute(text(query), params or {})
-            return result.fetchall()
+            rows = result.fetchall()
+            print(f"DEBUG: Fetched {len(rows)} rows", file=sys.stderr)
+            return rows
 
     @classmethod
     def insert_and_get_id(cls, query, params=None):
+        print(f"DEBUG: Insert and get ID: {query} with params: {params}", file=sys.stderr)
         with cls.get_connection() as conn:
             result = conn.execute(text(query), params or {})
             if result.returns_rows:
-                return result.fetchone()[0]
-            return result.lastrowid
+                row = result.fetchone()
+                print(f"DEBUG: Insert returned row: {row}", file=sys.stderr)
+                if row:
+                    try:
+                        # Try to get by index
+                        id_val = row[0]
+                        print(f"DEBUG: ID from index 0: {id_val}", file=sys.stderr)
+                        return id_val
+                    except (IndexError, TypeError) as e:
+                        print(f"DEBUG: Failed to get by index: {e}", file=sys.stderr)
+                        # Try by column name
+                        try:
+                            id_val = row._mapping['id']
+                            print(f"DEBUG: ID from _mapping['id']: {id_val}", file=sys.stderr)
+                            return id_val
+                        except (AttributeError, KeyError) as e2:
+                            print(f"DEBUG: Failed to get by _mapping: {e2}", file=sys.stderr)
+                            # Try converting to dict
+                            try:
+                                id_val = dict(row)['id']
+                                print(f"DEBUG: ID from dict: {id_val}", file=sys.stderr)
+                                return id_val
+                            except Exception as e3:
+                                print(f"DEBUG: All attempts failed: {e3}", file=sys.stderr)
+                                return None
+                else:
+                    print(f"DEBUG: Insert returned no row", file=sys.stderr)
+                    return None
+            else:
+                # Fallback to lastrowid (for SQLite without RETURNING)
+                id_val = result.lastrowid
+                print(f"DEBUG: Insert lastrowid: {id_val}", file=sys.stderr)
+                return id_val
 
 # -----------------------------------------------------------------------------
 # Authentication
@@ -239,39 +287,52 @@ class AuthManager:
     def login(username_or_email, password):
         """
         Login using either username or email.
-        Tries three methods to extract user ID; if all fail, prints raw row to stderr.
+        Tries multiple methods to extract user ID; logs everything.
         """
+        print(f"DEBUG: Login attempt for: {username_or_email}", file=sys.stderr)
         row = DBManager.fetch_one(
             "SELECT id, username, email, password, role FROM users WHERE username = :login OR email = :login",
             {"login": username_or_email}
         )
 
         if not row:
+            print(f"DEBUG: No user found for {username_or_email}", file=sys.stderr)
             return {'success': False, 'message': 'Invalid username/email or password'}
+
+        print(f"DEBUG: Raw row from login: {row}", file=sys.stderr)
+        print(f"DEBUG: Row type: {type(row)}", file=sys.stderr)
+        try:
+            print(f"DEBUG: dir(row): {dir(row)}", file=sys.stderr)
+        except:
+            pass
 
         # Attempt 1: dictionary access via _mapping (SQLAlchemy 1.4+)
         try:
             user_id = row._mapping['id']
-        except (AttributeError, KeyError):
+            print(f"DEBUG: Got user_id via _mapping: {user_id}", file=sys.stderr)
+        except (AttributeError, KeyError) as e:
+            print(f"DEBUG: _mapping failed: {e}", file=sys.stderr)
             user_id = None
 
         # Attempt 2: positional indexing
         if user_id is None:
             try:
                 user_id = row[0]
-            except (IndexError, TypeError):
+                print(f"DEBUG: Got user_id via index[0]: {user_id}", file=sys.stderr)
+            except (IndexError, TypeError) as e:
+                print(f"DEBUG: Indexing failed: {e}", file=sys.stderr)
                 user_id = None
 
         # Attempt 3: convert to dict (fallback)
         if user_id is None:
             try:
                 user_id = dict(row)['id']
-            except (TypeError, KeyError, ValueError):
+                print(f"DEBUG: Got user_id via dict: {user_id}", file=sys.stderr)
+            except (TypeError, KeyError, ValueError) as e:
+                print(f"DEBUG: dict conversion failed: {e}", file=sys.stderr)
                 user_id = None
 
-        # If all attempts fail, log the raw row and return a clear error
         if user_id is None:
-            # Print to stderr (visible in Streamlit Cloud logs)
             print("="*60, file=sys.stderr)
             print("FATAL: Could not extract user_id from row!", file=sys.stderr)
             print(f"Row type: {type(row)}", file=sys.stderr)
@@ -298,7 +359,10 @@ class AuthManager:
         role = row[4]
 
         if not AuthManager.check_password(password, password_hash):
+            print(f"DEBUG: Password check failed for {username_or_email}", file=sys.stderr)
             return {'success': False, 'message': 'Invalid username/email or password'}
+
+        print(f"DEBUG: Login successful for user {username} (ID: {user_id})", file=sys.stderr)
 
         # Log login – only if user_id is valid
         try:
@@ -307,8 +371,9 @@ class AuthManager:
                 {"uid": user_id}
             )
             st.session_state.current_login_id = login_id
+            print(f"DEBUG: Login history recorded with ID {login_id}", file=sys.stderr)
         except Exception as e:
-            # If login logging fails, still allow login (just don't track history)
+            print(f"DEBUG: Login tracking failed: {e}", file=sys.stderr)
             st.warning(f"Login tracking failed: {e}")
             st.session_state.current_login_id = None
 
@@ -318,11 +383,14 @@ class AuthManager:
             {"uid": user_id}
         )
         if not pref:
+            print(f"DEBUG: No preferences found for user {user_id}, creating default", file=sys.stderr)
             DBManager.execute(
                 "INSERT INTO user_preferences (user_id) VALUES (:uid)",
                 {"uid": user_id}
             )
             pref = (None, '₹', 5.0)
+        else:
+            print(f"DEBUG: Preferences loaded: {pref}", file=sys.stderr)
 
         return {
             'success': True,
@@ -337,6 +405,7 @@ class AuthManager:
 
     @staticmethod
     def register(username, email, password, role, dob, gender):
+        print(f"DEBUG: Registration attempt: username={username}, email={email}, role={role}", file=sys.stderr)
         try:
             hashed = AuthManager.hash_password(password)
             # Insert user and get ID
@@ -349,6 +418,8 @@ class AuthManager:
                 {"un": username, "em": email, "pw": hashed,
                  "role": role, "dob": dob, "gender": gender}
             )
+            print(f"DEBUG: Registration returned user_id: {user_id}", file=sys.stderr)
+
             # Double-check that user_id is valid
             if user_id is None:
                 raise Exception("User creation failed: no ID returned from database")
@@ -361,18 +432,24 @@ class AuthManager:
             if not check:
                 raise Exception("User creation failed: cannot find newly created user")
 
+            print(f"DEBUG: User {username} created successfully with ID {user_id}", file=sys.stderr)
+
             DBManager.execute(
                 "INSERT INTO user_preferences (user_id) VALUES (:uid)",
                 {"uid": user_id}
             )
+            print(f"DEBUG: Preferences created for user {user_id}", file=sys.stderr)
+
             return {'success': True, 'message': 'Account created'}
         except Exception as e:
+            print(f"DEBUG: Registration exception: {e}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
             if 'unique constraint' in str(e).lower():
                 return {'success': False, 'message': 'Username or email already exists'}
             return {'success': False, 'message': str(e)}
 
 # -----------------------------------------------------------------------------
-# Session Helpers
+# Session Helpers (unchanged, but with debug prints)
 # -----------------------------------------------------------------------------
 def init_session():
     defaults = {
@@ -392,11 +469,14 @@ def init_session():
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
+    print(f"DEBUG: Session initialized: logged_in={st.session_state.logged_in}, user_id={st.session_state.user_id}", file=sys.stderr)
 
 def set_page(page):
+    print(f"DEBUG: Setting page to {page}", file=sys.stderr)
     st.session_state.page = page
 
 def logout():
+    print(f"DEBUG: Logging out user {st.session_state.username}", file=sys.stderr)
     if st.session_state.current_login_id:
         DBManager.execute(
             """
@@ -407,12 +487,14 @@ def logout():
             """,
             {"lid": st.session_state.current_login_id}
         )
+        print(f"DEBUG: Logout time updated for login ID {st.session_state.current_login_id}", file=sys.stderr)
     keys_to_clear = ['token', 'logged_in', 'username', 'user_id', 'role', 'uploaded_df',
                      'active_business_id', 'currency_symbol', 'default_reorder_level',
                      'current_login_id', 'admin_authenticated']
     for k in keys_to_clear:
         st.session_state.pop(k, None)
     st.session_state.page = 'Home'
+    print(f"DEBUG: User logged out, session cleared", file=sys.stderr)
 
 def authenticate():
     token = st.session_state.get('token')
@@ -433,7 +515,7 @@ def can_delete_transactions():
     return st.session_state.role == 'Owner'
 
 # -----------------------------------------------------------------------------
-# Page Functions
+# Page Functions (only critical ones with debug prints)
 # -----------------------------------------------------------------------------
 def page_home():
     st.title("Business Analyzer")
@@ -454,6 +536,7 @@ def page_home():
 def page_login():
     # If already logged in, go straight to dashboard
     if st.session_state.get('logged_in', False):
+        print(f"DEBUG: Already logged in, redirecting to Dashboard", file=sys.stderr)
         set_page('Dashboard')
         st.rerun()
         return
@@ -477,6 +560,7 @@ def page_login():
                         'default_reorder_level': res['default_reorder_level'],
                         'page': 'Dashboard'
                     })
+                    print(f"DEBUG: Login successful, session updated, redirecting to Dashboard", file=sys.stderr)
                     st.rerun()
                 else:
                     st.error(res['message'])
@@ -1709,7 +1793,7 @@ def page_admin_dashboard():
                 st.rerun()
 
 # -----------------------------------------------------------------------------
-# Analytics Helpers (continued from above)
+# Analytics Helpers (continued)
 # -----------------------------------------------------------------------------
 class Analytics:
     @staticmethod
@@ -2375,3 +2459,4 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         st.error(f"Application error: {e}")
+        traceback.print_exc(file=sys.stderr)
