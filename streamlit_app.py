@@ -1,8 +1,7 @@
 """
-Business Analyzer – Production Ready – FINAL FIXED VERSION
+Business Analyzer – Production Ready – ULTIMATE FIXED VERSION
 All milestones + requested enhancements.
-Ensures user_id is never None, login works immediately after signup,
-and redirects to dashboard after login.
+Uses dictionary-style row access to guarantee user_id is never None.
 """
 
 import streamlit as st
@@ -240,25 +239,28 @@ class AuthManager:
         """
         Login using either username or email.
         Returns user dict with guaranteed user_id.
+        Uses ._mapping for safe column access.
         """
-        user_row = DBManager.fetch_one(
+        row = DBManager.fetch_one(
             "SELECT id, username, email, password, role FROM users WHERE username = :login OR email = :login",
             {"login": username_or_email}
         )
 
-        if not user_row:
+        if not row:
             return {'success': False, 'message': 'Invalid username/email or password'}
 
-        # Ensure the row has the expected number of columns
-        if len(user_row) < 5:
-            return {'success': False, 'message': 'Database error: incomplete user record'}
+        # Convert to dictionary for safe named access
+        user = dict(row._mapping)
 
-        # Unpack in correct order: id, username, email, password, role
-        user_id, username, email, password_hash, role = user_row
-
-        # Safety check: user_id must not be None
-        if user_id is None:
+        # Safety check: id must exist and not be None
+        if 'id' not in user or user['id'] is None:
             return {'success': False, 'message': 'Database error: user ID is missing'}
+
+        user_id = user['id']
+        username = user['username']
+        email = user['email']
+        password_hash = user['password']
+        role = user['role']
 
         if not AuthManager.check_password(password, password_hash):
             return {'success': False, 'message': 'Invalid username/email or password'}
@@ -946,7 +948,11 @@ def page_profile():
         st.error("User not found")
         return
 
-    user_id, username, email, role, dob, gender, created_at = user_row
+    user = dict(user_row._mapping)
+    user_id, username, email, role, dob, gender, created_at = (
+        user['id'], user['username'], user['email'], user['role'],
+        user['dob'], user['gender'], user['created_at']
+    )
 
     col1, col2 = st.columns(2)
     with col1:
@@ -1642,7 +1648,7 @@ def page_admin_dashboard():
                 st.rerun()
 
 # -----------------------------------------------------------------------------
-# Analytics Helpers
+# Analytics Helpers (continued from above)
 # -----------------------------------------------------------------------------
 class Analytics:
     @staticmethod
@@ -1760,7 +1766,8 @@ class Analytics:
             )
             if not prod:
                 return False, "Product not found."
-            curr_qty, curr_cost = prod
+            prod_dict = dict(prod._mapping)
+            curr_qty, curr_cost = prod_dict['quantity'], prod_dict['cost_price']
 
             if move_type == 'purchase':
                 new_qty = curr_qty + qty
@@ -1827,8 +1834,8 @@ class Analytics:
         )
         if not row:
             return {'product_count': 0, 'total_units': 0, 'total_value': 0}
-        product_count, total_units, total_value = row
-        return {'product_count': product_count, 'total_units': total_units, 'total_value': total_value}
+        row_dict = dict(row._mapping)
+        return {'product_count': row_dict['product_count'], 'total_units': row_dict['total_units'], 'total_value': row_dict['total_value']}
 
     @staticmethod
     def prepare_time_series(user_id, business_id, value_type='sales', freq='M'):
