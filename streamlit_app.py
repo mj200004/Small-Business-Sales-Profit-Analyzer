@@ -249,6 +249,10 @@ class AuthManager:
         if not user_row:
             return {'success': False, 'message': 'Invalid username/email or password'}
 
+        # Ensure the row has the expected number of columns
+        if len(user_row) < 5:
+            return {'success': False, 'message': 'Database error: incomplete user record'}
+
         # Unpack in correct order: id, username, email, password, role
         user_id, username, email, password_hash, role = user_row
 
