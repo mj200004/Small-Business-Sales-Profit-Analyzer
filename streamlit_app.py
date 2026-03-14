@@ -1,5 +1,7 @@
 """
-Small Business Sales Profit Analyzer – 
+Business Analyzer – Production Ready with Persistent Database
+All milestones + requested enhancements.
+Fixed: safe row access via explicit columns + positional indexing.
 """
 
 import streamlit as st
@@ -238,44 +240,45 @@ class AuthManager:
 
     @staticmethod
     def login(username, password):
+        # Select columns explicitly in a fixed order
         user_row = DBManager.fetch_one(
-            "SELECT * FROM users WHERE username = :username",
+            "SELECT id, username, email, password, role, dob, gender FROM users WHERE username = :username",
             {"username": username}
         )
         if not user_row:
             return {'success': False, 'message': 'Invalid username or password'}
 
-        # Convert to dict for safe named access
-        user = dict(user_row._mapping)
+        # Unpack by position (id, username, email, password, role, dob, gender)
+        user_id, username, email, password_hash, role, dob, gender = user_row
 
-        if not AuthManager.check_password(password, user["password"]):
+        if not AuthManager.check_password(password, password_hash):
             return {'success': False, 'message': 'Invalid username or password'}
 
-        # Log login
+        # Log login – user_id is now guaranteed not None
         login_id = DBManager.insert_and_get_id(
             "INSERT INTO login_history (user_id) VALUES (:uid) RETURNING id",
-            {"uid": user["id"]}
+            {"uid": user_id}
         )
         st.session_state.current_login_id = login_id
 
         # Load preferences
         pref = DBManager.fetch_one(
             "SELECT active_business_id, currency_symbol, default_reorder_level FROM user_preferences WHERE user_id = :uid",
-            {"uid": user["id"]}
+            {"uid": user_id}
         )
         if not pref:
             DBManager.execute(
                 "INSERT INTO user_preferences (user_id) VALUES (:uid)",
-                {"uid": user["id"]}
+                {"uid": user_id}
             )
             pref = (None, '₹', 5.0)
 
         return {
             'success': True,
-            'token': AuthManager.create_jwt_token(user["id"], user["username"], user["role"]),
-            'user_id': user["id"],
-            'username': user["username"],
-            'role': user["role"],
+            'token': AuthManager.create_jwt_token(user_id, username, role),
+            'user_id': user_id,
+            'username': username,
+            'role': role,
             'active_business_id': pref[0],
             'currency_symbol': pref[1],
             'default_reorder_level': pref[2]
@@ -485,8 +488,7 @@ class Analytics:
             )
             if not prod:
                 return False, "Product not found."
-            prod_dict = dict(prod._mapping)
-            curr_qty, curr_cost = prod_dict["quantity"], prod_dict["cost_price"]
+            curr_qty, curr_cost = prod  # positional unpacking
 
             if move_type == 'purchase':
                 new_qty = curr_qty + qty
@@ -551,8 +553,11 @@ class Analytics:
             """,
             {"uid": user_id, "bid": business_id}
         )
-        row_dict = dict(row._mapping)
-        return {'product_count': row_dict['product_count'], 'total_units': row_dict['total_units'], 'total_value': row_dict['total_value']}
+        # row is a tuple of three values
+        if not row:
+            return {'product_count': 0, 'total_units': 0, 'total_value': 0}
+        product_count, total_units, total_value = row
+        return {'product_count': product_count, 'total_units': total_units, 'total_value': total_value}
 
     @staticmethod
     def prepare_time_series(user_id, business_id, value_type='sales', freq='M'):
@@ -1439,15 +1444,15 @@ def page_analyze_data():
 def page_profile():
     st.title("Profile")
     user_row = DBManager.fetch_one(
-        "SELECT * FROM users WHERE id = :uid",
+        "SELECT id, username, email, role, dob, gender, created_at FROM users WHERE id = :uid",
         {"uid": st.session_state.user_id}
     )
     if not user_row:
         st.error("User not found")
         return
 
-    user = dict(user_row._mapping)
-    username, email, role, dob, gender, created_at = user["username"], user["email"], user["role"], user["dob"], user["gender"], user["created_at"]
+    # Unpack: id, username, email, role, dob, gender, created_at
+    user_id, username, email, role, dob, gender, created_at = user_row
 
     col1, col2 = st.columns(2)
     with col1:
