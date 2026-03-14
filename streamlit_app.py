@@ -1,6 +1,7 @@
 """
 Business Analyzer – Production Ready with Persistent Database
 All milestones + requested enhancements.
+Fixed: login_history user_id NULL issue, proper named column access.
 """
 
 import streamlit as st
@@ -239,46 +240,48 @@ class AuthManager:
 
     @staticmethod
     def login(username, password):
-        user = DBManager.fetch_one(
+        user_row = DBManager.fetch_one(
             "SELECT * FROM users WHERE username = :username",
             {"username": username}
         )
-        if user and AuthManager.check_password(password, user[3]):  # index 3 is password
-            # Map to dict for clarity (but we'll use indices)
-            user_id = user[0]
-            username = user[1]
-            role = user[4]
+        if not user_row:
+            return {'success': False, 'message': 'Invalid username or password'}
 
-            # Log login
-            login_id = DBManager.insert_and_get_id(
-                "INSERT INTO login_history (user_id) VALUES (:uid) RETURNING id",
-                {"uid": user_id}
+        # Convert to dict for safe named access
+        user = dict(user_row._mapping)
+
+        if not AuthManager.check_password(password, user["password"]):
+            return {'success': False, 'message': 'Invalid username or password'}
+
+        # Log login
+        login_id = DBManager.insert_and_get_id(
+            "INSERT INTO login_history (user_id) VALUES (:uid) RETURNING id",
+            {"uid": user["id"]}
+        )
+        st.session_state.current_login_id = login_id
+
+        # Load preferences
+        pref = DBManager.fetch_one(
+            "SELECT active_business_id, currency_symbol, default_reorder_level FROM user_preferences WHERE user_id = :uid",
+            {"uid": user["id"]}
+        )
+        if not pref:
+            DBManager.execute(
+                "INSERT INTO user_preferences (user_id) VALUES (:uid)",
+                {"uid": user["id"]}
             )
-            st.session_state.current_login_id = login_id
+            pref = (None, '₹', 5.0)
 
-            # Load preferences
-            pref = DBManager.fetch_one(
-                "SELECT active_business_id, currency_symbol, default_reorder_level FROM user_preferences WHERE user_id = :uid",
-                {"uid": user_id}
-            )
-            if not pref:
-                DBManager.execute(
-                    "INSERT INTO user_preferences (user_id) VALUES (:uid)",
-                    {"uid": user_id}
-                )
-                pref = (None, '₹', 5.0)
-
-            return {
-                'success': True,
-                'token': AuthManager.create_jwt_token(user_id, username, role),
-                'user_id': user_id,
-                'username': username,
-                'role': role,
-                'active_business_id': pref[0],
-                'currency_symbol': pref[1],
-                'default_reorder_level': pref[2]
-            }
-        return {'success': False, 'message': 'Invalid username or password'}
+        return {
+            'success': True,
+            'token': AuthManager.create_jwt_token(user["id"], user["username"], user["role"]),
+            'user_id': user["id"],
+            'username': user["username"],
+            'role': user["role"],
+            'active_business_id': pref[0],
+            'currency_symbol': pref[1],
+            'default_reorder_level': pref[2]
+        }
 
     @staticmethod
     def register(username, email, password, role, dob, gender):
@@ -484,7 +487,8 @@ class Analytics:
             )
             if not prod:
                 return False, "Product not found."
-            curr_qty, curr_cost = prod[0], prod[1]
+            prod_dict = dict(prod._mapping)
+            curr_qty, curr_cost = prod_dict["quantity"], prod_dict["cost_price"]
 
             if move_type == 'purchase':
                 new_qty = curr_qty + qty
@@ -549,7 +553,8 @@ class Analytics:
             """,
             {"uid": user_id, "bid": business_id}
         )
-        return {'product_count': row[0], 'total_units': row[1], 'total_value': row[2]}
+        row_dict = dict(row._mapping)
+        return {'product_count': row_dict['product_count'], 'total_units': row_dict['total_units'], 'total_value': row_dict['total_value']}
 
     @staticmethod
     def prepare_time_series(user_id, business_id, value_type='sales', freq='M'):
@@ -620,19 +625,9 @@ class Analytics:
 
     @staticmethod
     def get_expense_by_category(user_id, business_id, period):
-        params = {"uid": user_id, "bid": business_id}
-        date_filter = ""
-        if period == 'week':
-            date_filter = " AND date >= CURRENT_DATE - INTERVAL '7 days'"
-        elif period == 'month':
-            date_filter = " AND date >= CURRENT_DATE - INTERVAL '30 days'"
-        elif period == 'year':
-            date_filter = " AND date >= CURRENT_DATE - INTERVAL '1 year'"
-        # Note: INTERVAL syntax works in PostgreSQL; for SQLite we'd need a different approach.
-        # To keep it cross-platform, we'll fetch all and filter in Python.
         rows = DBManager.fetch_all(
             "SELECT category, amount, date FROM transactions WHERE user_id = :uid AND business_id = :bid AND type = 'Expense'",
-            params
+            {"uid": user_id, "bid": business_id}
         )
         df = pd.DataFrame(rows, columns=['category', 'amount', 'date'])
         if df.empty:
@@ -866,7 +861,6 @@ class Admin:
     @staticmethod
     def delete_user(user_id):
         DBManager.execute("DELETE FROM users WHERE id = :uid", {"uid": user_id})
-        # Also delete related data (foreign keys may cascade, but manually for safety)
         DBManager.execute("DELETE FROM businesses WHERE user_id = :uid", {"uid": user_id})
         DBManager.execute("DELETE FROM transactions WHERE user_id = :uid", {"uid": user_id})
         DBManager.execute("DELETE FROM products WHERE user_id = :uid", {"uid": user_id})
@@ -1446,16 +1440,16 @@ def page_analyze_data():
 
 def page_profile():
     st.title("Profile")
-    user = DBManager.fetch_one(
+    user_row = DBManager.fetch_one(
         "SELECT * FROM users WHERE id = :uid",
         {"uid": st.session_state.user_id}
     )
-    if not user:
+    if not user_row:
         st.error("User not found")
         return
 
-    # Unpack columns (id, username, email, password, role, dob, gender, created_at)
-    username, email, role, dob, gender, created_at = user[1], user[2], user[4], user[5], user[6], user[7]
+    user = dict(user_row._mapping)
+    username, email, role, dob, gender, created_at = user["username"], user["email"], user["role"], user["dob"], user["gender"], user["created_at"]
 
     col1, col2 = st.columns(2)
     with col1:
@@ -2043,7 +2037,7 @@ def page_admin_dashboard():
             st.info("No users found.")
         else:
             st.dataframe(users_df[['username','email','role','dob','gender','business_count','transaction_count']])
-            # Delete user UI (same as before but using DBManager)
+            # Delete user UI
             for idx, row in users_df.iterrows():
                 cols = st.columns([2,2,1,1,1,1])
                 cols[0].write(f"**{row['username']}**")
