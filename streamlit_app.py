@@ -1,6 +1,7 @@
 """
-Business Analyzer – Production Ready with Persistent Database
-FIXED: Login now works immediately after signup with proper user_id retrieval.
+Business Analyzer – Production Ready – FINAL FIXED VERSION
+All milestones + requested enhancements.
+Ensures user_id is never None, login works immediately after signup.
 """
 
 import streamlit as st
@@ -79,6 +80,7 @@ class DBManager:
     @classmethod
     def init_db(cls):
         with cls.get_connection() as conn:
+            # Users table
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS users (
                     id SERIAL PRIMARY KEY,
@@ -91,6 +93,7 @@ class DBManager:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """))
+            # Login history
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS login_history (
                     id SERIAL PRIMARY KEY,
@@ -100,6 +103,7 @@ class DBManager:
                     session_duration INTEGER
                 )
             """))
+            # Admin access logs
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS admin_access_logs (
                     id SERIAL PRIMARY KEY,
@@ -107,6 +111,7 @@ class DBManager:
                     access_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """))
+            # Businesses
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS businesses (
                     id SERIAL PRIMARY KEY,
@@ -118,6 +123,7 @@ class DBManager:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """))
+            # Transactions
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS transactions (
                     id SERIAL PRIMARY KEY,
@@ -130,6 +136,7 @@ class DBManager:
                     date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """))
+            # User preferences
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS user_preferences (
                     user_id INTEGER PRIMARY KEY,
@@ -138,6 +145,7 @@ class DBManager:
                     default_reorder_level REAL DEFAULT 5.0
                 )
             """))
+            # Products
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS products (
                     id SERIAL PRIMARY KEY,
@@ -154,6 +162,7 @@ class DBManager:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """))
+            # Stock movements
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS stock_movements (
                     id SERIAL PRIMARY KEY,
@@ -231,32 +240,21 @@ class AuthManager:
         Login using either username or email.
         Returns user dict with guaranteed user_id.
         """
-        # Search by username OR email
         user_row = DBManager.fetch_one(
             "SELECT id, username, email, password, role FROM users WHERE username = :login OR email = :login",
             {"login": username_or_email}
         )
 
-        # Debug: print the raw result (remove in production)
-        # st.write(f"Raw user row: {user_row}")
-
         if not user_row:
             return {'success': False, 'message': 'Invalid username/email or password'}
 
-        # Unpack by position - guaranteed order: id, username, email, password, role
-        user_id = user_row[0]
-        username = user_row[1]
-        email = user_row[2]
-        password_hash = user_row[3]
-        role = user_row[4]
-
-        # Debug: verify we have a valid user_id
-        # st.write(f"User ID retrieved: {user_id}")
+        # Unpack in correct order: id, username, email, password, role
+        user_id, username, email, password_hash, role = user_row
 
         if not AuthManager.check_password(password, password_hash):
             return {'success': False, 'message': 'Invalid username/email or password'}
 
-        # Log login - user_id is now guaranteed not None
+        # Log login – user_id is guaranteed not None
         try:
             login_id = DBManager.insert_and_get_id(
                 "INSERT INTO login_history (user_id) VALUES (:uid) RETURNING id",
@@ -391,13 +389,13 @@ def page_home():
     **Features:** Interactive trends, profit margins, category breakdowns, AI forecasting.
 
     ### Milestone 4 – Reports, Admin, and Deployment
-    **Features:** PDF/Excel report generation, email reports, admin dashboard.
+    **Features:** PDF/Excel report generation, admin dashboard.
     """)
 
 def page_login():
     st.title("Login")
     with st.form("login_form"):
-        login_field = st.text_input("Username or Email")  # Can be either
+        login_field = st.text_input("Username or Email")
         password = st.text_input("Password", type="password")
         if st.form_submit_button("Login", use_container_width=True):
             if login_field and password:
@@ -407,7 +405,7 @@ def page_login():
                         'token': res['token'],
                         'logged_in': True,
                         'username': res['username'],
-                        'user_id': res['user_id'],
+                        'user_id': res['user_id'],          # Ensure user_id is set
                         'role': res['role'],
                         'active_business_id': res['active_business_id'],
                         'currency_symbol': res['currency_symbol'],
@@ -445,6 +443,12 @@ def page_signup():
                     st.error(res['message'])
 
 def page_dashboard():
+    # Ensure user is logged in
+    if st.session_state.user_id is None:
+        st.warning("Please log in first.")
+        set_page("Login")
+        st.rerun()
+
     st.title("Dashboard")
     aid = st.session_state.active_business_id
     if aid:
@@ -494,6 +498,11 @@ def page_dashboard():
         st.warning("Create a business in 'My Businesses'.")
 
 def page_businesses():
+    if st.session_state.user_id is None:
+        st.warning("Please log in first.")
+        set_page("Login")
+        st.rerun()
+
     st.title("My Businesses")
     with st.expander("Add New Business"):
         with st.form("add_business_form"):
@@ -502,6 +511,11 @@ def page_businesses():
             addr = st.text_area("Address")
             phone = st.text_input("Phone")
             if st.form_submit_button("Create", use_container_width=True) and name:
+                # Ensure user_id is not None
+                if st.session_state.user_id is None:
+                    st.error("Session error. Please log in again.")
+                    set_page("Login")
+                    st.rerun()
                 bid = DBManager.insert_and_get_id(
                     """
                     INSERT INTO businesses (user_id, business_name, business_type, address, phone)
@@ -575,6 +589,11 @@ def page_businesses():
         st.divider()
 
 def page_add_transaction():
+    if st.session_state.user_id is None:
+        st.warning("Please log in first.")
+        set_page("Login")
+        st.rerun()
+
     st.title("Add Transaction")
     if not st.session_state.active_business_id:
         st.warning("Select an active business first.")
@@ -605,6 +624,11 @@ def page_add_transaction():
                 st.rerun()
 
 def page_view_transactions():
+    if st.session_state.user_id is None:
+        st.warning("Please log in first.")
+        set_page("Login")
+        st.rerun()
+
     st.title("Transactions")
     if not st.session_state.active_business_id:
         st.warning("No active business.")
@@ -644,6 +668,11 @@ def page_view_transactions():
     st.download_button("Download CSV", df.to_csv(index=False), "transactions.csv")
 
 def page_import_transactions():
+    if st.session_state.user_id is None:
+        st.warning("Please log in first.")
+        set_page("Login")
+        st.rerun()
+
     st.title("Import CSV")
     if not st.session_state.active_business_id:
         st.warning("Select active business first")
@@ -738,6 +767,11 @@ def page_import_transactions():
             st.rerun()
 
 def page_sales_dashboard():
+    if st.session_state.user_id is None:
+        st.warning("Please log in first.")
+        set_page("Login")
+        st.rerun()
+
     st.title("Sales Dashboard")
     if not st.session_state.active_business_id:
         st.warning("No active business")
@@ -883,6 +917,11 @@ def page_analyze_data():
             st.rerun()
 
 def page_profile():
+    if st.session_state.user_id is None:
+        st.warning("Please log in first.")
+        set_page("Login")
+        st.rerun()
+
     st.title("Profile")
     user_row = DBManager.fetch_one(
         "SELECT id, username, email, role, dob, gender, created_at FROM users WHERE id = :uid",
@@ -938,6 +977,11 @@ def page_profile():
             st.rerun()
 
 def page_profit_dashboard():
+    if st.session_state.user_id is None:
+        st.warning("Please log in first.")
+        set_page("Login")
+        st.rerun()
+
     st.title("Profit Dashboard")
     if not st.session_state.active_business_id:
         st.warning("Select active business")
@@ -984,6 +1028,11 @@ def page_profit_dashboard():
         st.plotly_chart(fig_margin, use_container_width=True)
 
 def page_inventory():
+    if st.session_state.user_id is None:
+        st.warning("Please log in first.")
+        set_page("Login")
+        st.rerun()
+
     st.title("Inventory")
     if not st.session_state.active_business_id:
         st.warning("Select active business")
@@ -1092,6 +1141,11 @@ def page_inventory():
             st.dataframe(hist)
 
 def page_cogs():
+    if st.session_state.user_id is None:
+        st.warning("Please log in first.")
+        set_page("Login")
+        st.rerun()
+
     st.title("COGS Analysis")
     if not st.session_state.active_business_id:
         st.warning("Select active business")
@@ -1145,6 +1199,11 @@ def page_cogs():
     st.dataframe(df)
 
 def page_sales_trends():
+    if st.session_state.user_id is None:
+        st.warning("Please log in first.")
+        set_page("Login")
+        st.rerun()
+
     st.title("Sales Trends")
     if not st.session_state.active_business_id:
         st.warning("Select active business")
@@ -1173,6 +1232,11 @@ def page_sales_trends():
     ])
 
 def page_profit_margins():
+    if st.session_state.user_id is None:
+        st.warning("Please log in first.")
+        set_page("Login")
+        st.rerun()
+
     st.title("Profit Margins")
     if not st.session_state.active_business_id:
         st.warning("Select active business")
@@ -1221,6 +1285,11 @@ def page_profit_margins():
     ])
 
 def page_expense_categories():
+    if st.session_state.user_id is None:
+        st.warning("Please log in first.")
+        set_page("Login")
+        st.rerun()
+
     st.title("Expense Categories")
     if not st.session_state.active_business_id:
         st.warning("Select active business")
@@ -1254,6 +1323,11 @@ def page_expense_categories():
         st.dataframe(df_sales)
 
 def page_forecasting():
+    if st.session_state.user_id is None:
+        st.warning("Please log in first.")
+        set_page("Login")
+        st.rerun()
+
     st.title("AI Forecasting")
     if not st.session_state.active_business_id:
         st.warning("Select active business")
@@ -1357,6 +1431,11 @@ def page_forecasting():
             st.dataframe(disp)
 
 def page_report_generation():
+    if st.session_state.user_id is None:
+        st.warning("Please log in first.")
+        set_page("Login")
+        st.rerun()
+
     st.title("Generate Report")
     if not st.session_state.active_business_id:
         st.warning("Select an active business first.")
@@ -1370,19 +1449,6 @@ def page_report_generation():
             end_date = st.date_input("End Date", datetime.now().date())
 
         report_type = st.radio("Report Format", ["Excel", "PDF"], horizontal=True)
-        include_inventory = st.checkbox("Include Inventory Data", value=True)
-
-        send_email = st.checkbox("Send report via email")
-        if send_email:
-            email_to = st.text_input("Recipient Email")
-            user = DBManager.fetch_one(
-                "SELECT email FROM users WHERE id = :uid",
-                {"uid": st.session_state.user_id}
-            )
-            owner_email = user[0] if user else ""
-            st.info(f"Report will be sent from your registered email: {owner_email}")
-        else:
-            email_to = None
 
         submitted = st.form_submit_button("Generate Report", type="primary")
 
@@ -1406,8 +1472,6 @@ def page_report_generation():
                     file_name=f"report_{start_date}_to_{end_date}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
-                attachment = excel_bytes.getvalue()
-                filename = f"report_{start_date}_to_{end_date}.xlsx"
             else:
                 pdf_bytes = generate_pdf_report(data, start_date, end_date)
                 st.download_button(
@@ -1416,26 +1480,15 @@ def page_report_generation():
                     file_name=f"report_{start_date}_to_{end_date}.pdf",
                     mime="application/pdf"
                 )
-                attachment = pdf_bytes
-                filename = f"report_{start_date}_to_{end_date}.pdf"
-
-            if send_email and email_to:
-                user = DBManager.fetch_one(
-                    "SELECT email FROM users WHERE id = :uid",
-                    {"uid": st.session_state.user_id}
-                )
-                from_email = user[0] if user else "business-analyzer@localhost"
-                subject = f"Business Report {start_date} to {end_date}"
-                body = f"Please find attached your business report for period {start_date} to {end_date}."
-                ok, msg = send_email_simple(email_to, subject, body, attachment, filename, from_email)
-                if ok:
-                    st.success(msg)
-                else:
-                    st.error(f"Email failed: {msg}. Ensure a local SMTP server is running on port 25.")
         except Exception as e:
             st.error(f"Report generation failed: {str(e)}")
 
 def page_admin_dashboard():
+    if st.session_state.user_id is None:
+        st.warning("Please log in first.")
+        set_page("Login")
+        st.rerun()
+
     st.title("Admin Dashboard")
 
     if st.session_state.role != "Manager":
@@ -1574,7 +1627,7 @@ def page_admin_dashboard():
                 st.rerun()
 
 # -----------------------------------------------------------------------------
-# Analytics Helpers (continued from above)
+# Analytics Helpers
 # -----------------------------------------------------------------------------
 class Analytics:
     @staticmethod
