@@ -7,6 +7,5 @@ sqlalchemy
 plotly
 openpyxl
 fpdf
-smtplib
 scikit-learn
 prophet
