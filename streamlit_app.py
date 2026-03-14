@@ -1,7 +1,8 @@
 """
 Business Analyzer – Production Ready – FINAL FIXED VERSION
 All milestones + requested enhancements.
-Ensures user_id is never None, login works immediately after signup.
+Ensures user_id is never None, login works immediately after signup,
+and redirects to dashboard after login.
 """
 
 import streamlit as st
@@ -251,10 +252,14 @@ class AuthManager:
         # Unpack in correct order: id, username, email, password, role
         user_id, username, email, password_hash, role = user_row
 
+        # Safety check: user_id must not be None
+        if user_id is None:
+            return {'success': False, 'message': 'Database error: user ID is missing'}
+
         if not AuthManager.check_password(password, password_hash):
             return {'success': False, 'message': 'Invalid username/email or password'}
 
-        # Log login – user_id is guaranteed not None
+        # Log login – only if user_id is valid
         try:
             login_id = DBManager.insert_and_get_id(
                 "INSERT INTO login_history (user_id) VALUES (:uid) RETURNING id",
@@ -2242,6 +2247,11 @@ def main():
     DBManager.init_db()
     init_session()
     render_sidebar()
+
+    # Safety redirect: if logged in but page is Login, go to Dashboard
+    if st.session_state.get('logged_in', False) and st.session_state.page == 'Login':
+        set_page('Dashboard')
+        st.rerun()
 
     pages = {
         "Home": page_home,
