@@ -1,9 +1,9 @@
 """
-Business Analyzer – SQLite‑only version (fully fixed)
+Business Analyzer – Full Production Code (SQLite)
 - Tables use AUTOINCREMENT
-- INSERTs do not use RETURNING – IDs obtained via lastrowid
+- No RETURNING clauses – IDs obtained via lastrowid
 - Registration uses a single connection to avoid visibility issues
-- All original functionality preserved
+- All Milestone features included
 """
 
 import streamlit as st
@@ -394,7 +394,7 @@ class AuthManager:
                 return {'success': False, 'message': str(e)}
 
 # -----------------------------------------------------------------------------
-# Session Helpers (unchanged, but with debug prints)
+# Session Helpers
 # -----------------------------------------------------------------------------
 def init_session():
     defaults = {
@@ -461,8 +461,7 @@ def can_delete_transactions():
     return st.session_state.role == 'Owner'
 
 # -----------------------------------------------------------------------------
-# Page Functions (only the ones that were modified to remove RETURNING are shown;
-# all others remain identical to the original – for completeness they are included.)
+# Page Functions
 # -----------------------------------------------------------------------------
 
 def page_home():
