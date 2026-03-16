@@ -1,7 +1,9 @@
 """
-Business Analyzer – Production Ready – ULTIMATE DEBUG VERSION
-All milestones + requested enhancements.
-Extreme logging: prints everything about database interactions to stderr.
+Business Analyzer – SQLite‑only version (fully fixed)
+- Tables use AUTOINCREMENT
+- INSERTs do not use RETURNING – IDs obtained via lastrowid
+- SQLite‑compatible date/time calculations
+- All original functionality preserved
 """
 
 import streamlit as st
@@ -52,6 +54,7 @@ class Config:
     @classmethod
     def get_engine(cls):
         if cls.DATABASE_URL:
+            # If a URL is provided, we assume it's SQLite (or another DB) – still use it.
             return create_engine(cls.DATABASE_URL, poolclass=NullPool)
         else:
             data_dir = Path.home() / ".business_analyzer"
@@ -60,7 +63,7 @@ class Config:
             return create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
 
 # -----------------------------------------------------------------------------
-# Database Manager with Debugging
+# Database Manager – SQLite specific
 # -----------------------------------------------------------------------------
 class DBManager:
     _engine = None
@@ -84,11 +87,12 @@ class DBManager:
 
     @classmethod
     def init_db(cls):
+        """Create tables with SQLite AUTOINCREMENT."""
         with cls.get_connection() as conn:
             # Users table
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS users (
-                    id SERIAL PRIMARY KEY,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username VARCHAR(255) UNIQUE NOT NULL,
                     email VARCHAR(255) UNIQUE NOT NULL,
                     password VARCHAR(255) NOT NULL,
@@ -99,28 +103,31 @@ class DBManager:
                 )
             """))
             print("DEBUG: Ensured users table exists", file=sys.stderr)
+
             # Login history
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS login_history (
-                    id SERIAL PRIMARY KEY,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
                     login_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     logout_time TIMESTAMP,
                     session_duration INTEGER
                 )
             """))
+
             # Admin access logs
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS admin_access_logs (
-                    id SERIAL PRIMARY KEY,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
                     access_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """))
+
             # Businesses
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS businesses (
-                    id SERIAL PRIMARY KEY,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
                     business_name VARCHAR(255) NOT NULL,
                     business_type VARCHAR(255),
@@ -129,10 +136,11 @@ class DBManager:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """))
+
             # Transactions
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS transactions (
-                    id SERIAL PRIMARY KEY,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
                     business_id INTEGER NOT NULL,
                     type VARCHAR(50) NOT NULL,
@@ -142,6 +150,7 @@ class DBManager:
                     date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """))
+
             # User preferences
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS user_preferences (
@@ -151,10 +160,11 @@ class DBManager:
                     default_reorder_level REAL DEFAULT 5.0
                 )
             """))
+
             # Products
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS products (
-                    id SERIAL PRIMARY KEY,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
                     business_id INTEGER NOT NULL,
                     product_name VARCHAR(255) NOT NULL,
@@ -168,10 +178,11 @@ class DBManager:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """))
+
             # Stock movements
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS stock_movements (
-                    id SERIAL PRIMARY KEY,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
                     product_id INTEGER NOT NULL,
                     movement_type VARCHAR(50) NOT NULL,
                     quantity REAL NOT NULL,
@@ -216,43 +227,17 @@ class DBManager:
 
     @classmethod
     def insert_and_get_id(cls, query, params=None):
+        """
+        Execute an INSERT and return the generated primary key.
+        For SQLite we rely on lastrowid (RETURNING is not used).
+        """
         print(f"DEBUG: Insert and get ID: {query} with params: {params}", file=sys.stderr)
         with cls.get_connection() as conn:
             result = conn.execute(text(query), params or {})
-            if result.returns_rows:
-                row = result.fetchone()
-                print(f"DEBUG: Insert returned row: {row}", file=sys.stderr)
-                if row:
-                    try:
-                        # Try to get by index
-                        id_val = row[0]
-                        print(f"DEBUG: ID from index 0: {id_val}", file=sys.stderr)
-                        return id_val
-                    except (IndexError, TypeError) as e:
-                        print(f"DEBUG: Failed to get by index: {e}", file=sys.stderr)
-                        # Try by column name
-                        try:
-                            id_val = row._mapping['id']
-                            print(f"DEBUG: ID from _mapping['id']: {id_val}", file=sys.stderr)
-                            return id_val
-                        except (AttributeError, KeyError) as e2:
-                            print(f"DEBUG: Failed to get by _mapping: {e2}", file=sys.stderr)
-                            # Try converting to dict
-                            try:
-                                id_val = dict(row)['id']
-                                print(f"DEBUG: ID from dict: {id_val}", file=sys.stderr)
-                                return id_val
-                            except Exception as e3:
-                                print(f"DEBUG: All attempts failed: {e3}", file=sys.stderr)
-                                return None
-                else:
-                    print(f"DEBUG: Insert returned no row", file=sys.stderr)
-                    return None
-            else:
-                # Fallback to lastrowid (for SQLite without RETURNING)
-                id_val = result.lastrowid
-                print(f"DEBUG: Insert lastrowid: {id_val}", file=sys.stderr)
-                return id_val
+            id_val = result.lastrowid
+            print(f"DEBUG: Insert lastrowid: {id_val}", file=sys.stderr)
+            # lastrowid can be None for tables without auto‑increment, but we have it.
+            return id_val
 
 # -----------------------------------------------------------------------------
 # Authentication
@@ -287,7 +272,6 @@ class AuthManager:
     def login(username_or_email, password):
         """
         Login using either username or email.
-        Tries multiple methods to extract user ID; logs everything.
         """
         print(f"DEBUG: Login attempt for: {username_or_email}", file=sys.stderr)
         row = DBManager.fetch_one(
@@ -299,60 +283,12 @@ class AuthManager:
             print(f"DEBUG: No user found for {username_or_email}", file=sys.stderr)
             return {'success': False, 'message': 'Invalid username/email or password'}
 
-        print(f"DEBUG: Raw row from login: {row}", file=sys.stderr)
-        print(f"DEBUG: Row type: {type(row)}", file=sys.stderr)
+        # Extract user_id (handles different row types)
         try:
-            print(f"DEBUG: dir(row): {dir(row)}", file=sys.stderr)
-        except:
-            pass
-
-        # Attempt 1: dictionary access via _mapping (SQLAlchemy 1.4+)
-        try:
+            user_id = row[0]
+        except (IndexError, TypeError):
             user_id = row._mapping['id']
-            print(f"DEBUG: Got user_id via _mapping: {user_id}", file=sys.stderr)
-        except (AttributeError, KeyError) as e:
-            print(f"DEBUG: _mapping failed: {e}", file=sys.stderr)
-            user_id = None
 
-        # Attempt 2: positional indexing
-        if user_id is None:
-            try:
-                user_id = row[0]
-                print(f"DEBUG: Got user_id via index[0]: {user_id}", file=sys.stderr)
-            except (IndexError, TypeError) as e:
-                print(f"DEBUG: Indexing failed: {e}", file=sys.stderr)
-                user_id = None
-
-        # Attempt 3: convert to dict (fallback)
-        if user_id is None:
-            try:
-                user_id = dict(row)['id']
-                print(f"DEBUG: Got user_id via dict: {user_id}", file=sys.stderr)
-            except (TypeError, KeyError, ValueError) as e:
-                print(f"DEBUG: dict conversion failed: {e}", file=sys.stderr)
-                user_id = None
-
-        if user_id is None:
-            print("="*60, file=sys.stderr)
-            print("FATAL: Could not extract user_id from row!", file=sys.stderr)
-            print(f"Row type: {type(row)}", file=sys.stderr)
-            print(f"Row dir: {dir(row)}", file=sys.stderr)
-            try:
-                print(f"Row as string: {str(row)}", file=sys.stderr)
-            except:
-                pass
-            try:
-                print(f"Row as tuple: {tuple(row)}", file=sys.stderr)
-            except:
-                pass
-            try:
-                print(f"Row _mapping: {row._mapping}", file=sys.stderr)
-            except:
-                pass
-            print("="*60, file=sys.stderr)
-            return {'success': False, 'message': 'Database error: unable to retrieve user ID – check server logs'}
-
-        # Now get the rest by index (safe because we know the order)
         username = row[1]
         email = row[2]
         password_hash = row[3]
@@ -364,10 +300,10 @@ class AuthManager:
 
         print(f"DEBUG: Login successful for user {username} (ID: {user_id})", file=sys.stderr)
 
-        # Log login – only if user_id is valid
+        # Log login – no RETURNING
         try:
             login_id = DBManager.insert_and_get_id(
-                "INSERT INTO login_history (user_id) VALUES (:uid) RETURNING id",
+                "INSERT INTO login_history (user_id) VALUES (:uid)",
                 {"uid": user_id}
             )
             st.session_state.current_login_id = login_id
@@ -408,23 +344,21 @@ class AuthManager:
         print(f"DEBUG: Registration attempt: username={username}, email={email}, role={role}", file=sys.stderr)
         try:
             hashed = AuthManager.hash_password(password)
-            # Insert user and get ID
+            # Insert user and get ID – no RETURNING
             user_id = DBManager.insert_and_get_id(
                 """
                 INSERT INTO users (username, email, password, role, dob, gender)
                 VALUES (:un, :em, :pw, :role, :dob, :gender)
-                RETURNING id
                 """,
                 {"un": username, "em": email, "pw": hashed,
                  "role": role, "dob": dob, "gender": gender}
             )
             print(f"DEBUG: Registration returned user_id: {user_id}", file=sys.stderr)
 
-            # Double-check that user_id is valid
             if user_id is None:
                 raise Exception("User creation failed: no ID returned from database")
 
-            # Verify the user was actually inserted by fetching it back
+            # Verify the user was actually inserted
             check = DBManager.fetch_one(
                 "SELECT id FROM users WHERE id = :uid",
                 {"uid": user_id}
@@ -478,11 +412,12 @@ def set_page(page):
 def logout():
     print(f"DEBUG: Logging out user {st.session_state.username}", file=sys.stderr)
     if st.session_state.current_login_id:
+        # SQLite version: compute session duration in seconds
         DBManager.execute(
             """
             UPDATE login_history
             SET logout_time = CURRENT_TIMESTAMP,
-                session_duration = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - login_time))::INTEGER
+                session_duration = CAST((julianday('now') - julianday(login_time)) * 86400 AS INTEGER)
             WHERE id = :lid
             """,
             {"lid": st.session_state.current_login_id}
@@ -515,8 +450,10 @@ def can_delete_transactions():
     return st.session_state.role == 'Owner'
 
 # -----------------------------------------------------------------------------
-# Page Functions (only critical ones with debug prints)
+# Page Functions (only the ones that were modified to remove RETURNING are shown;
+# all others remain identical to the original – for completeness they are included.)
 # -----------------------------------------------------------------------------
+
 def page_home():
     st.title("Business Analyzer")
     st.markdown("""
@@ -534,7 +471,6 @@ def page_home():
     """)
 
 def page_login():
-    # If already logged in, go straight to dashboard
     if st.session_state.get('logged_in', False):
         print(f"DEBUG: Already logged in, redirecting to Dashboard", file=sys.stderr)
         set_page('Dashboard')
@@ -592,7 +528,6 @@ def page_signup():
                     st.error(res['message'])
 
 def page_dashboard():
-    # Ensure user is logged in
     if st.session_state.user_id is None:
         st.warning("Please log in first.")
         set_page("Login")
@@ -660,15 +595,15 @@ def page_businesses():
             addr = st.text_area("Address")
             phone = st.text_input("Phone")
             if st.form_submit_button("Create", use_container_width=True) and name:
-                # Ensure user_id is not None
                 if st.session_state.user_id is None:
                     st.error("Session error. Please log in again.")
                     set_page("Login")
                     st.rerun()
+                # No RETURNING
                 bid = DBManager.insert_and_get_id(
                     """
                     INSERT INTO businesses (user_id, business_name, business_type, address, phone)
-                    VALUES (:uid, :name, :typ, :addr, :phone) RETURNING id
+                    VALUES (:uid, :name, :typ, :addr, :phone)
                     """,
                     {"uid": st.session_state.user_id, "name": name, "typ": typ, "addr": addr, "phone": phone}
                 )
@@ -1793,7 +1728,7 @@ def page_admin_dashboard():
                 st.rerun()
 
 # -----------------------------------------------------------------------------
-# Analytics Helpers (continued)
+# Analytics Helpers
 # -----------------------------------------------------------------------------
 class Analytics:
     @staticmethod
@@ -1878,12 +1813,12 @@ class Analytics:
     @staticmethod
     def add_product(user_id, business_id, name, sku, qty, cost, price, reorder, category):
         try:
+            # No RETURNING
             pid = DBManager.insert_and_get_id(
                 """
                 INSERT INTO products (user_id, business_id, product_name, sku, quantity,
                     cost_price, selling_price, reorder_level, category)
                 VALUES (:uid, :bid, :name, :sku, :qty, :cost, :price, :reorder, :cat)
-                RETURNING id
                 """,
                 {"uid": user_id, "bid": business_id, "name": name, "sku": sku,
                  "qty": qty, "cost": cost, "price": price, "reorder": reorder, "cat": category}
@@ -2189,11 +2124,12 @@ class Admin:
 
     @staticmethod
     def get_daily_transaction_volume(days=30):
+        # SQLite version: use date('now', '-30 days')
         rows = DBManager.fetch_all(
             f"""
             SELECT date(date) as day, COUNT(*) as count
             FROM transactions
-            WHERE date >= CURRENT_DATE - INTERVAL '{days} days'
+            WHERE date >= date('now', '-{days} days')
             GROUP BY day
             ORDER BY day
             """
