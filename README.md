@@ -295,5 +295,10 @@ LIVE PAGE
 ```
 small-business-sales-profit-analyzer ∙ main ∙ streamlit_app.py
 ```
+
+LIVE
+```
+https://my-streamlit-app-production-4426.up.railway.app/
+```
 **Last Updated**: 2026 
 **Author**: Moupriyo Jana (Infosys Springboard Intern)
