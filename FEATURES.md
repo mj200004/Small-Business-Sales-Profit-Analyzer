@@ -737,7 +737,7 @@ admin_logs (
 
 ## Feature Comparison by Role
 
-| Feature | Owner | Accountant | Staff |
+| Feature | Manager | Accountant | Staff |
 |---------|-------|------------|-------|
 | View Dashboard | ✓ | ✓ | ✓ |
 | View Transactions | ✓ | ✓ | ✓ |
